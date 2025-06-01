@@ -1,0 +1,982 @@
+<template>
+  <div ref="wrapper" class="wrapper" @dblclick="resetZoom">
+    <canvas
+      ref="canvas"
+      class="styled-canvas"
+      :width="canvasWidth"
+      :height="canvasHeight"
+      @wheel.prevent="handleWheel"
+      @mousedown="handleMouseDown"
+      @mousemove="handleMouseMove"
+      @mouseup="handleMouseUp"
+      @dblclick="handleDoubleClick"
+      tabindex="0"
+    ></canvas>
+    <Rulers
+      v-if="showRulers"
+      :show-rulers="showRulers"
+      :canvas-width="canvasWidth"
+      :canvas-height="canvasHeight"
+      :zoom-level="zoom"
+      :offset-x="offsetX"
+      :offset-y="offsetY"
+    />
+    <div class="status-bar">
+      <div class="status-item"><strong>Zoom:</strong> {{ Math.round(zoom * 100) }}%</div>
+      <div class="status-item"><strong>X:</strong> {{ Math.round(cursorX) }}</div>
+      <div class="status-item"><strong>Y:</strong> {{ Math.round(cursorY) }}</div>
+      <div class="status-item"><strong>Selected:</strong> {{ selectedShapes.length }}</div>
+      <div class="status-item" :class="{ 'status-active': snapToGrid }">
+        <strong>Snap to Grid:</strong> {{ snapToGrid ? 'ON' : 'OFF' }}
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import Rulers from './Rulers.vue'
+
+export default {
+  name: "CanvasZoomGrid",
+  components: { Rulers },
+  props: {
+    tool: String,
+    styles: Object,
+    gridSize: Number,
+    gridOpacity: Number,
+    showRulers: Boolean,
+    snapToGrid: Boolean
+  },
+  data() {
+    return {
+      ctx: null,
+      zoom: 1,
+      zoomTarget: 1,
+      offsetX: 0,
+      offsetY: 0,
+      panTargetX: 0,
+      panTargetY: 0,
+      canvasWidth: 1632, // 17 inches * 96 DPI
+      canvasHeight: 1056, // 11 inches * 96 DPI
+      shapes: [],
+      selectedShapes: [],
+      isDrawing: false,
+      isDragging: false,
+      isResizing: false,
+      isRotating: false,
+      startX: 0,
+      startY: 0,
+      currentShape: null,
+      resizeHandle: null,
+      selectionStart: null,
+      lastGridSize: 0,
+      lastGridOpacity: 0,
+      lastZoom: 1,
+      cursorX: 0,
+      cursorY: 0,
+      clipboard: [] // For copy/paste operations
+    };
+  },
+  mounted() {
+    try {
+      const canvas = this.$refs.canvas;
+      if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+      }
+      this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!this.ctx) {
+        console.error('Failed to get 2D context');
+        return;
+      }
+      canvas.focus();
+      
+      // Initialize canvas with proper centering
+      // Use setTimeout to ensure the wrapper has been properly rendered
+      setTimeout(() => {
+        this.centerCanvas('reset');
+      }, 100);
+      
+      window.addEventListener("resize", this.centerCanvas);
+      document.addEventListener("keydown", this.handleKeyDown);
+      
+      // Make sure canvas gets focus when clicked
+      canvas.addEventListener("click", () => {
+        canvas.focus();
+      });
+      
+      this.animate();
+    } catch (error) {
+      console.error('Error initializing canvas:', error);
+    }
+  },
+  beforeUnmount() {
+    window.removeEventListener("resize", this.centerCanvas);
+    document.removeEventListener("keydown", this.handleKeyDown);
+  },
+  methods: {
+    centerCanvas() {
+      // Set initial offset to center the canvas
+      const wrapper = this.$refs.wrapper;
+      if (!wrapper) return; // Safety check
+      
+      // Reset zoom to 1 when centering (for double-click reset)
+      if (arguments[0] === 'reset') {
+        // Set target zoom for smooth animation
+        this.zoomTarget = 1;
+      }
+      
+      // Reset offset to 0 to center the canvas
+      // Use targets for smooth animation
+      this.panTargetX = 0;
+      this.panTargetY = 0;
+      
+      // No need to force render - animate() will handle it smoothly
+    },
+    handleWheel(e) {
+      if (e.ctrlKey) {
+        // Get mouse position relative to canvas
+        const rect = this.$refs.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        // Calculate the position in canvas space before zoom
+        const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+        const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+        const mouseCanvasX = (mouseX - centerX) / this.zoom;
+        const mouseCanvasY = (mouseY - centerY) / this.zoom;
+        
+        // Calculate new zoom level with improved sensitivity
+        const delta = e.deltaY * -0.001;
+        const newZoom = Math.min(Math.max(this.zoom + delta, 0.3), 4);
+        
+        // Calculate how much the offset should change to keep the mouse position fixed
+        const zoomRatio = newZoom / this.zoom;
+        const offsetChangeX = mouseX - (mouseX - centerX) * zoomRatio - centerX;
+        const offsetChangeY = mouseY - (mouseY - centerY) * zoomRatio - centerY;
+        
+        // Update pan targets to compensate for zoom
+        this.panTargetX += offsetChangeX * 0.5;
+        this.panTargetY += offsetChangeY * 0.5;
+        
+        // Set target zoom for smooth animation
+        this.zoomTarget = newZoom;
+        
+        // No need to force render - animate() will handle it smoothly
+      } else if (e.shiftKey) {
+        // Horizontal pan
+        this.panTargetX += e.deltaY * 0.5;
+        
+        // No need to force render - animate() will handle it smoothly
+      } else {
+        // Vertical pan
+        this.panTargetY += e.deltaY * 0.5;
+        
+        // No need to force render - animate() will handle it smoothly
+      }
+      
+      // Always prevent default to avoid page scrolling
+      e.preventDefault();
+    },
+    resetZoom() {
+      // Call centerCanvas with 'reset' argument to reset zoom and center
+      this.centerCanvas('reset');
+    },
+    snapCoordinate(coord) {
+      if (this.snapToGrid && this.gridSize) {
+        return Math.round(coord / this.gridSize) * this.gridSize;
+      }
+      return coord;
+    },
+    handleMouseDown(e) {
+      // Focus the canvas to ensure keyboard events work
+      this.$refs.canvas.focus();
+      
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      
+      // Calculate the position to center the drawing area
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      
+      // Calculate coordinates in canvas space
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      this.startX = this.snapCoordinate(x);
+      this.startY = this.snapCoordinate(y);
+
+      // Log for debugging
+      console.log('Mouse down at:', x, y);
+      
+      if (this.tool) {
+        this.isDrawing = true;
+        this.currentShape = {
+          id: Date.now(), // Add unique ID
+          type: this.tool,
+          x: this.startX,
+          y: this.startY,
+          width: 0,
+          height: 0,
+          text: this.tool === 'text' ? 'Text' : '',
+          points: this.tool === 'pen' ? [[this.startX, this.startY]] : null,
+          rotation: 0,
+          ...this.styles
+        };
+      } else {
+        // Try to find a handle first
+        const handle = this.getHandleAt(x, y);
+        if (handle) {
+          console.log('Handle found:', handle.type, handle.corner);
+          if (handle.type === 'resize') {
+            this.isResizing = true;
+            this.resizeHandle = handle;
+          } else if (handle.type === 'rotate') {
+            this.isRotating = true;
+          }
+          return;
+        }
+        
+        // Then try to find a shape
+        const shape = this.getShapeAt(x, y);
+        console.log('Shape found:', shape ? shape.type : 'none');
+        
+        if (shape) {
+          if (!e.shiftKey) {
+            this.selectedShapes = [];
+          }
+          
+          if (!this.selectedShapes.includes(shape)) {
+            this.selectedShapes.push(shape);
+          }
+          
+          // Emit selected shapes to parent component for StylePanel
+          this.$emit('shapes-selected', this.selectedShapes);
+          this.isDragging = true;
+          
+          // Force a render to show selection immediately
+          this.render();
+          return;
+        }
+        
+        // If no shape was clicked, clear selection and start a selection rectangle
+        this.selectedShapes = [];
+        // Emit empty selection to parent component
+        this.$emit('shapes-selected', this.selectedShapes);
+        
+        // Start a selection rectangle
+        this.selectionStart = { x, y };
+        this.currentShape = {
+          type: 'selection',
+          x: x,
+          y: y,
+          width: 0,
+          height: 0
+        };
+      }
+    },
+    handleMouseMove(e) {
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      
+      // Calculate the position to center the drawing area
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      
+      // Calculate coordinates in canvas space
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      // Update cursor position for status bar
+      this.cursorX = x;
+      this.cursorY = y;
+      
+      const snappedX = this.snapCoordinate(x);
+      const snappedY = this.snapCoordinate(y);
+
+      if (this.isDrawing) {
+        if (this.tool === 'pen') {
+          this.currentShape.points.push([snappedX, snappedY]);
+        } else {
+          this.currentShape.width = snappedX - this.startX;
+          this.currentShape.height = snappedY - this.startY;
+        }
+      } else if (this.isDragging) {
+        const dx = snappedX - this.startX;
+        const dy = snappedY - this.startY;
+        this.selectedShapes.forEach(shape => {
+          shape.x += dx;
+          shape.y += dy;
+        });
+        this.startX = snappedX;
+        this.startY = snappedY;
+      } else if (this.isResizing) {
+        const shape = this.selectedShapes[0];
+        const corner = this.resizeHandle.corner;
+        
+        // Handle different resize corners
+        if (corner === 'bottom-right') {
+          shape.width = Math.max(10, snappedX - shape.x);
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'top-left') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.y = shape.y + shape.height - newHeight;
+          shape.width = newWidth;
+          shape.height = newHeight;
+        } else if (corner === 'top-right') {
+          shape.width = Math.max(10, snappedX - shape.x);
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.y = shape.y + shape.height - newHeight;
+          shape.height = newHeight;
+        } else if (corner === 'bottom-left') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.width = newWidth;
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'top-middle') {
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.y = shape.y + shape.height - newHeight;
+          shape.height = newHeight;
+        } else if (corner === 'bottom-middle') {
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'left-middle') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.width = newWidth;
+        } else if (corner === 'right-middle') {
+          shape.width = Math.max(10, snappedX - shape.x);
+        }
+      } else if (this.isRotating) {
+        const shape = this.selectedShapes[0];
+        const centerX = shape.x + shape.width / 2;
+        const centerY = shape.y + shape.height / 2;
+        shape.rotation = Math.atan2(y - centerY, x - centerX) + Math.PI / 2;
+      } else if (this.selectionStart) {
+        this.currentShape = {
+          type: 'selection',
+          x: Math.min(this.startX, snappedX),
+          y: Math.min(this.startY, snappedY),
+          width: Math.abs(snappedX - this.startX),
+          height: Math.abs(snappedY - this.startY)
+        };
+      }
+      this.render();
+    },
+    handleMouseUp() {
+      if (this.isDrawing) {
+        // Only add the shape if it has some size
+        if (Math.abs(this.currentShape.width) > 5 || Math.abs(this.currentShape.height) > 5 || 
+            this.currentShape.type === 'text' || this.currentShape.type === 'pen') {
+          // Ensure positive width/height
+          if (this.currentShape.width < 0) {
+            this.currentShape.x += this.currentShape.width;
+            this.currentShape.width = Math.abs(this.currentShape.width);
+          }
+          if (this.currentShape.height < 0) {
+            this.currentShape.y += this.currentShape.height;
+            this.currentShape.height = Math.abs(this.currentShape.height);
+          }
+          
+          this.shapes.push({ ...this.currentShape });
+          this.$emit('shape-added', this.shapes.slice());
+        }
+        
+        this.currentShape = null;
+        this.isDrawing = false;
+      } else if (this.isDragging) {
+        this.isDragging = false;
+        // Emit shape-updated event when dragging ends
+        this.$emit('shape-updated', this.shapes.slice());
+      } else if (this.isResizing) {
+        this.isResizing = false;
+        this.resizeHandle = null;
+        // Emit shape-updated event when resizing ends
+        this.$emit('shape-updated', this.shapes.slice());
+      } else if (this.isRotating) {
+        this.isRotating = false;
+        // Emit shape-updated event when rotation ends
+        this.$emit('shape-updated', this.shapes.slice());
+      } else if (this.selectionStart) {
+        // Normalize the selection rectangle (handle negative width/height)
+        let selX = this.currentShape.x;
+        let selY = this.currentShape.y;
+        let selWidth = this.currentShape.width;
+        let selHeight = this.currentShape.height;
+        
+        if (selWidth < 0) {
+          selX += selWidth;
+          selWidth = Math.abs(selWidth);
+        }
+        
+        if (selHeight < 0) {
+          selY += selHeight;
+          selHeight = Math.abs(selHeight);
+        }
+        
+        // Select shapes that intersect with the selection rectangle
+        this.selectedShapes = this.shapes.filter(shape => {
+          // Check if the shape intersects with the selection rectangle
+          return !(
+            shape.x > selX + selWidth ||
+            shape.x + shape.width < selX ||
+            shape.y > selY + selHeight ||
+            shape.y + shape.height < selY
+          );
+        });
+        
+        console.log('Selected shapes:', this.selectedShapes.length);
+        
+        this.currentShape = null;
+        this.selectionStart = null;
+        
+        // Emit selected shapes to parent component
+        this.$emit('shapes-selected', this.selectedShapes);
+      }
+      
+      this.render();
+    },
+    handleDoubleClick(e) {
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      
+      // Calculate the position to center the drawing area
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      
+      // Calculate coordinates in canvas space
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      const shape = this.getShapeAt(x, y);
+      if (shape && shape.type === 'text') {
+        const newText = prompt('Enter text:', shape.text);
+        if (newText) {
+          shape.text = newText;
+          this.$emit('shape-updated', this.shapes.slice());
+          this.render();
+        }
+      } else {
+        // Reset zoom and center the canvas
+        this.resetZoom();
+      }
+    },
+    handleKeyDown(e) {
+      console.log('Key pressed:', e.key, 'Ctrl:', e.ctrlKey, 'Shift:', e.shiftKey);
+      
+      // ESC key to cancel drawing or selection
+      if (e.key === 'Escape') {
+        if (this.isDrawing) {
+          this.isDrawing = false;
+          this.currentShape = null;
+          console.log('Drawing canceled');
+        } else if (this.selectionStart) {
+          this.selectionStart = null;
+          this.currentShape = null;
+          console.log('Selection canceled');
+        } else if (this.selectedShapes.length) {
+          this.selectedShapes = [];
+          this.$emit('shapes-selected', []);
+          console.log('Selection cleared');
+        }
+        this.render();
+        e.preventDefault();
+        return;
+      }
+      
+      // Delete key to delete selected shapes
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedShapes.length) {
+        console.log('Deleting', this.selectedShapes.length, 'shapes');
+        this.deleteSelected();
+        this.$emit('shape-deleted', this.shapes.slice());
+        // Also emit the empty selection
+        this.$emit('shapes-selected', []);
+        this.render();
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+0 to reset zoom
+      if (e.ctrlKey && e.key === '0') {
+        this.resetZoom();
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+ to zoom in
+      if (e.ctrlKey && (e.key === '+' || e.key === '=')) {
+        this.zoomTarget = Math.min(this.zoom + 0.1, 4);
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl- to zoom out
+      if (e.ctrlKey && e.key === '-') {
+        this.zoomTarget = Math.max(this.zoom - 0.1, 0.3);
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+A to select all shapes
+      if (e.ctrlKey && e.key === 'a') {
+        this.selectedShapes = [...this.shapes];
+        // Emit selected shapes to parent component
+        this.$emit('shapes-selected', this.selectedShapes);
+        this.render();
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+C to copy selected shapes
+      if (e.ctrlKey && e.key === 'c') {
+        if (this.selectedShapes.length) {
+          this.clipboard = this.selectedShapes.map(shape => ({...shape}));
+          console.log('Copied', this.clipboard.length, 'shapes to clipboard');
+          e.preventDefault();
+        }
+        return;
+      }
+      
+      // Ctrl+V to paste shapes
+      if (e.ctrlKey && e.key === 'v') {
+        if (this.clipboard.length) {
+          // Create new shapes with offset to make them visible
+          const newShapes = this.clipboard.map(shape => {
+            const newShape = {...shape};
+            // Add unique ID to avoid conflicts
+            newShape.id = Date.now() + Math.random();
+            newShape.x += 20;
+            newShape.y += 20;
+            return newShape;
+          });
+          
+          // Add new shapes to canvas
+          this.shapes.push(...newShapes);
+          
+          // Select the newly pasted shapes
+          this.selectedShapes = newShapes;
+          
+          // Emit events
+          this.$emit('shape-added', this.shapes.slice());
+          this.$emit('shapes-selected', this.selectedShapes);
+          
+          this.render();
+          e.preventDefault();
+        }
+        return;
+      }
+      
+      // Ctrl+Z to undo
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+        this.$emit('undo-requested');
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+Shift+Z to redo
+      if (e.ctrlKey && e.shiftKey && (e.key === 'Z' || e.key === 'z')) {
+        this.$emit('redo-requested');
+        e.preventDefault();
+        return;
+      }
+      
+      // Ctrl+Y to redo (alternative)
+      if (e.ctrlKey && e.key === 'y') {
+        this.$emit('redo-requested');
+        e.preventDefault();
+        return;
+      }
+      
+      // G key to toggle snap to grid
+      if (e.key === 'g' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        this.$emit('toggle-snap-grid');
+        console.log('Toggle snap to grid:', !this.snapToGrid);
+        e.preventDefault();
+        return;
+      }
+    },
+    deleteSelected() {
+      this.shapes = this.shapes.filter(shape => !this.selectedShapes.includes(shape));
+      this.selectedShapes = [];
+    },
+    getShapeAt(x, y) {
+      // Search in reverse order (top-most shape first)
+      for (let i = this.shapes.length - 1; i >= 0; i--) {
+        const shape = this.shapes[i];
+        
+        // For text shapes
+        if (shape.type === 'text') {
+          if (x >= shape.x - 5 && x <= shape.x + 100 + 5 && 
+              y >= shape.y - 5 && y <= shape.y + 30 + 5) {
+            return shape;
+          }
+          continue;
+        }
+        
+        // For regular shapes, add a small buffer for easier selection
+        const buffer = 5 / this.zoom; // 5px buffer, adjusted for zoom
+        if (x >= shape.x - buffer && 
+            x <= shape.x + shape.width + buffer && 
+            y >= shape.y - buffer && 
+            y <= shape.y + shape.height + buffer) {
+          return shape;
+        }
+      }
+      return null;
+    },
+    getHandleAt(x, y) {
+      if (!this.selectedShapes.length) return null;
+      const shape = this.selectedShapes[0];
+      
+      // Create all resize handles
+      const handles = [
+        { type: 'resize', corner: 'top-left', x: shape.x, y: shape.y },
+        { type: 'resize', corner: 'top-right', x: shape.x + shape.width, y: shape.y },
+        { type: 'resize', corner: 'bottom-left', x: shape.x, y: shape.y + shape.height },
+        { type: 'resize', corner: 'bottom-right', x: shape.x + shape.width, y: shape.y + shape.height },
+        { type: 'resize', corner: 'top-middle', x: shape.x + shape.width/2, y: shape.y },
+        { type: 'resize', corner: 'bottom-middle', x: shape.x + shape.width/2, y: shape.y + shape.height },
+        { type: 'resize', corner: 'left-middle', x: shape.x, y: shape.y + shape.height/2 },
+        { type: 'resize', corner: 'right-middle', x: shape.x + shape.width, y: shape.y + shape.height/2 },
+        { type: 'rotate', x: shape.x + shape.width / 2, y: shape.y - 20 / this.zoom }
+      ];
+      
+      // Make the hit area larger for easier selection
+      const hitRadius = 15 / this.zoom;
+      return handles.find(h => Math.hypot(x - h.x, y - h.y) < hitRadius);
+    },
+    render() {
+      const ctx = this.ctx;
+      if (!ctx) return;
+      
+      // Clear the entire canvas
+      ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+      
+      // Save the current state
+      ctx.save();
+      
+      // Fill canvas with dark background color
+      ctx.fillStyle = '#333333';
+      ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+      
+      // Calculate the size of the drawing area based on zoom
+      const drawingWidth = this.canvasWidth * this.zoom;
+      const drawingHeight = this.canvasHeight * this.zoom;
+      
+      // Calculate the position to center the drawing area
+      const centerX = (this.canvasWidth - drawingWidth) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - drawingHeight) / 2 + this.offsetY;
+      
+      // Apply transformations
+      ctx.translate(centerX, centerY);
+      ctx.scale(this.zoom, this.zoom);
+      
+      // Draw white canvas background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+      
+      // Draw canvas border
+      ctx.strokeStyle = '#999999';
+      ctx.lineWidth = 1 / this.zoom;
+      ctx.strokeRect(0, 0, this.canvasWidth, this.canvasHeight);
+      
+      // Grid rendering
+      if (this.gridSize) {
+        const step = this.gridSize;
+        ctx.strokeStyle = `rgba(0, 0, 0, ${this.gridOpacity})`;
+        ctx.lineWidth = 0.5 / this.zoom;
+        
+        // Draw vertical grid lines
+        for (let x = 0; x <= this.canvasWidth; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, this.canvasHeight);
+          ctx.stroke();
+        }
+        
+        // Draw horizontal grid lines
+        for (let y = 0; y <= this.canvasHeight; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(this.canvasWidth, y);
+          ctx.stroke();
+        }
+      }
+
+      // Shapes rendering
+      this.shapes.forEach(shape => {
+        ctx.save();
+        if (shape.rotation) {
+          ctx.translate(shape.x + shape.width / 2, shape.y + shape.height / 2);
+          ctx.rotate(shape.rotation);
+          ctx.translate(-(shape.x + shape.width / 2), -(shape.y + shape.height / 2));
+        }
+        ctx.beginPath();
+        ctx.lineWidth = shape.lineWidth / this.zoom;
+        ctx.strokeStyle = shape.stroke;
+        ctx.fillStyle = shape.fill;
+        if (shape.type === 'rectangle') {
+          ctx.rect(shape.x, shape.y, shape.width, shape.height);
+        } else if (shape.type === 'circle') {
+          const radius = Math.sqrt(shape.width ** 2 + shape.height ** 2);
+          ctx.arc(shape.x, shape.y, radius, 0, 2 * Math.PI);
+        } else if (shape.type === 'line') {
+          ctx.moveTo(shape.x, shape.y);
+          ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+        } else if (shape.type === 'ellipse') {
+          ctx.ellipse(shape.x + shape.width / 2, shape.y + shape.height / 2, Math.abs(shape.width / 2), Math.abs(shape.height / 2), 0, 0, 2 * Math.PI);
+        } else if (shape.type === 'arrow') {
+          ctx.moveTo(shape.x, shape.y);
+          ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+          const angle = Math.atan2(shape.height, shape.width);
+          const headSize = 15 / this.zoom;
+          ctx.moveTo(shape.x + shape.width, shape.y + shape.height);
+          ctx.lineTo(
+            shape.x + shape.width - headSize * Math.cos(angle - Math.PI / 6),
+            shape.y + shape.height - headSize * Math.sin(angle - Math.PI / 6)
+          );
+          ctx.moveTo(shape.x + shape.width, shape.y + shape.height);
+          ctx.lineTo(
+            shape.x + shape.width - headSize * Math.cos(angle + Math.PI / 6),
+            shape.y + shape.height - headSize * Math.sin(angle + Math.PI / 6)
+          );
+        } else if (shape.type === 'text') {
+          ctx.font = `${20 / this.zoom}px Arial`;
+          ctx.fillText(shape.text, shape.x, shape.y + 20 / this.zoom);
+        } else if (shape.type === 'image') {
+          if (shape.image) {
+            ctx.drawImage(shape.image, shape.x, shape.y, shape.width, shape.height);
+          }
+        } else if (shape.type === 'pen') {
+          if (shape.points && shape.points.length > 1) {
+            ctx.moveTo(shape.points[0][0], shape.points[0][1]);
+            for (let i = 1; i < shape.points.length; i++) {
+              ctx.lineTo(shape.points[i][0], shape.points[i][1]);
+            }
+          }
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // Current shape rendering
+      if (this.currentShape) {
+        ctx.beginPath();
+        
+        if (this.currentShape.type === 'selection') {
+          // Draw selection rectangle with dashed lines
+          ctx.setLineDash([5 / this.zoom, 5 / this.zoom]);
+          ctx.strokeStyle = '#2196F3'; // Material blue
+          ctx.lineWidth = 1 / this.zoom;
+          ctx.strokeRect(this.currentShape.x, this.currentShape.y, this.currentShape.width, this.currentShape.height);
+          ctx.setLineDash([]); // Reset dash pattern
+        } else {
+          // Regular shape drawing
+          ctx.lineWidth = this.currentShape.lineWidth / this.zoom;
+          ctx.strokeStyle = this.currentShape.stroke;
+          ctx.fillStyle = this.currentShape.fill;
+          
+          if (this.currentShape.type === 'rectangle') {
+            ctx.rect(this.currentShape.x, this.currentShape.y, this.currentShape.width, this.currentShape.height);
+          } else if (this.currentShape.type === 'circle') {
+            const radius = Math.sqrt(this.currentShape.width ** 2 + this.currentShape.height ** 2);
+            ctx.arc(this.currentShape.x, this.currentShape.y, radius, 0, 2 * Math.PI);
+          } else if (this.currentShape.type === 'line') {
+            ctx.moveTo(this.currentShape.x, this.currentShape.y);
+            ctx.lineTo(this.currentShape.x + this.currentShape.width, this.currentShape.y + this.currentShape.height);
+          } else if (this.currentShape.type === 'ellipse') {
+            ctx.ellipse(this.currentShape.x + this.currentShape.width / 2, this.currentShape.y + this.currentShape.height / 2, Math.abs(this.currentShape.width / 2), Math.abs(this.currentShape.height / 2), 0, 0, 2 * Math.PI);
+          } else if (this.currentShape.type === 'arrow') {
+            ctx.moveTo(this.currentShape.x, this.currentShape.y);
+            ctx.lineTo(this.currentShape.x + this.currentShape.width, this.currentShape.y + this.currentShape.height);
+            const angle = Math.atan2(this.currentShape.height, this.currentShape.width);
+            const headSize = 15 / this.zoom;
+            ctx.moveTo(this.currentShape.x + this.currentShape.width, this.currentShape.y + this.currentShape.height);
+            ctx.lineTo(
+              this.currentShape.x + this.currentShape.width - headSize * Math.cos(angle - Math.PI / 6),
+              this.currentShape.y + this.currentShape.height - headSize * Math.sin(angle - Math.PI / 6)
+            );
+            ctx.moveTo(this.currentShape.x + this.currentShape.width, this.currentShape.y + this.currentShape.height);
+            ctx.lineTo(
+              this.currentShape.x + this.currentShape.width - headSize * Math.cos(angle + Math.PI / 6),
+              this.currentShape.y + this.currentShape.height - headSize * Math.sin(angle + Math.PI / 6)
+            );
+          } else if (this.currentShape.type === 'text') {
+            ctx.font = `${20 / this.zoom}px Arial`;
+            ctx.fillText(this.currentShape.text, this.currentShape.x, this.currentShape.y + 20 / this.zoom);
+          } else if (this.currentShape.type === 'pen') {
+            if (this.currentShape.points && this.currentShape.points.length > 1) {
+              ctx.moveTo(this.currentShape.points[0][0], this.currentShape.points[0][1]);
+              for (let i = 1; i < this.currentShape.points.length; i++) {
+                ctx.lineTo(this.currentShape.points[i][0], this.currentShape.points[i][1]);
+              }
+            }
+          }
+        
+        // Only fill and stroke for non-selection shapes
+        if (this.currentShape.type !== 'selection') {
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      // Selection handles
+      this.selectedShapes.forEach(shape => {
+        // Draw selection outline
+        ctx.save();
+        ctx.strokeStyle = '#2196F3'; // Material blue
+        ctx.lineWidth = 2 / this.zoom;
+        ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+        
+        // Draw resize handles
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#2196F3';
+        const handleSize = 10 / this.zoom;
+        const halfHandle = handleSize / 2;
+        
+        // Draw corner handles
+        ctx.beginPath();
+        ctx.rect(shape.x - halfHandle, shape.y - halfHandle, handleSize, handleSize);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.rect(shape.x + shape.width - halfHandle, shape.y - halfHandle, handleSize, handleSize);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.rect(shape.x - halfHandle, shape.y + shape.height - halfHandle, handleSize, handleSize);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.rect(shape.x + shape.width - halfHandle, shape.y + shape.height - halfHandle, handleSize, handleSize);
+        ctx.fill();
+        ctx.stroke();
+        
+        // Draw rotation handle
+        ctx.fillStyle = '#FF9800';
+        ctx.beginPath();
+        ctx.arc(shape.x + shape.width / 2, shape.y - 20 / this.zoom, 6 / this.zoom, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.restore();
+      });
+
+      // We already drew the canvas border earlier, no need to draw it again
+
+      ctx.restore();
+    },
+    animate() {
+      // Check if we need to update any values
+      const zoomDiff = this.zoomTarget - this.zoom;
+      const offsetXDiff = this.panTargetX - this.offsetX;
+      const offsetYDiff = this.panTargetY - this.offsetY;
+      
+      // Apply smooth transitions with easing
+      // Use a smaller threshold for zoom to make it smoother
+      if (Math.abs(zoomDiff) > 0.0001) {
+        // Use a smoother easing factor for zoom (0.15 instead of 0.2)
+        this.zoom += zoomDiff * 0.15;
+      } else {
+        // Snap to target when very close to avoid floating point issues
+        this.zoom = this.zoomTarget;
+      }
+      
+      if (Math.abs(offsetXDiff) > 0.1) {
+        this.offsetX += offsetXDiff * 0.2;
+      } else {
+        this.offsetX = this.panTargetX;
+      }
+      
+      if (Math.abs(offsetYDiff) > 0.1) {
+        this.offsetY += offsetYDiff * 0.2;
+      } else {
+        this.offsetY = this.panTargetY;
+      }
+      
+      // Render if any values changed or grid settings changed
+      const needsRender = 
+        Math.abs(zoomDiff) > 0.0001 || 
+        Math.abs(offsetXDiff) > 0.1 || 
+        Math.abs(offsetYDiff) > 0.1 ||
+        this.gridSize !== this.lastGridSize || 
+        this.gridOpacity !== this.lastGridOpacity;
+      
+      if (needsRender) {
+        this.lastGridSize = this.gridSize;
+        this.lastGridOpacity = this.gridOpacity;
+        this.lastZoom = this.zoom;
+        this.render();
+      }
+      
+      requestAnimationFrame(this.animate.bind(this));
+    }
+  }
+};
+</script>
+
+<style scoped>
+.wrapper {
+  position: fixed;
+  top: 130px;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 130px);
+  background-color: #333333;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+.styled-canvas {
+  display: block;
+  background-color: #fff;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  border: 1px solid #555;
+}
+
+.status-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 36px; /* Increased height */
+  background-color: #2c2c2c; /* Darker background for better contrast */
+  border-top: 1px solid #555;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 16px; /* Larger font size */
+  font-weight: 500; /* Slightly bolder */
+  color: #ffffff; /* White text for better contrast */
+  z-index: 100;
+}
+
+.status-item {
+  margin-right: 30px; /* More spacing between items */
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.3); /* Subtle text shadow for readability */
+  padding: 0 8px; /* Add padding around each item */
+  border-radius: 4px; /* Rounded corners */
+  background-color: rgba(255,255,255,0.1); /* Subtle background for each item */
+  height: 28px; /* Fixed height */
+  display: flex;
+  align-items: center; /* Center content vertically */
+}
+
+.status-item strong {
+  margin-right: 5px; /* Space between label and value */
+  color: #8cddff; /* Light blue color for labels */
+}
+
+.status-active {
+  background-color: rgba(76, 175, 80, 0.3) !important; /* Green background when active */
+  border: 1px solid #4CAF50; /* Green border */
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.5); /* Subtle glow effect */
+  font-weight: bold; /* Make text bold */
+}
+</style>

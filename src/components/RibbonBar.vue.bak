@@ -1,0 +1,59 @@
+<template>
+  <div class="ribbon">
+    <div class="tool-group" v-for="group in tools" :key="group.label">
+      <div
+        v-for="tool in group.items"
+        :key="tool.name"
+        class="tool-icon"
+        :title="tool.title"
+        @click="$emit('select-tool', tool.name)"
+      >
+        {{ tool.icon }}
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  name: 'RibbonBar',
+  data: () => ({
+    tools: [
+      {
+        label: 'Shapes',
+        items: [
+          { name: 'line', icon: '↔', title: 'Line Tool' },
+          { name: 'box', icon: '⬛', title: 'Rectangle Tool' },
+          { name: 'circle', icon: '◯', title: 'Circle Tool' },
+          { name: 'arrow', icon: '➤', title: 'Arrow Tool' },
+          { name: 'pen', icon: '🖊️', title: 'Freeform Pen' }
+        ]
+      }
+    ]
+  })
+}
+</script>
+
+<style scoped>
+.ribbon {
+  display: flex;
+  background: #3b3b3b;
+  padding: 6px 12px;
+  border-bottom: 1px solid #555;
+}
+.tool-group {
+  display: flex;
+  margin-right: 32px;
+}
+.tool-icon {
+  margin-right: 12px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 20px;
+  transition: transform 0.2s;
+}
+.tool-icon:hover {
+  transform: scale(1.2);
+  color: #80cfff;
+}
+</style>

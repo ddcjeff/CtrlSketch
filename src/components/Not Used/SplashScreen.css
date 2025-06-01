@@ -1,0 +1,320 @@
+/* Splash Screen Component Styles */
+.splash-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #1e1e1e; /* Dark background */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  opacity: 1; /* Start visible by default */
+  transition: opacity 0.5s ease;
+}
+
+/* This class is now redundant but kept for compatibility */
+.splash-screen.start {
+  opacity: 1;
+}
+
+.splash-content {
+  position: relative;
+  width: 500px;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Logo styles and animations */
+.logo-container {
+  position: relative;
+  width: 400px;
+  height: 150px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.app-logo {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Arial', sans-serif;
+  font-size: 48px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  z-index: 5;
+}
+
+.logo-ctrl {
+  color: #F7A41D; /* Orange/gold color */
+}
+
+.logo-sketch {
+  color: #ffffff; /* White color */
+}
+
+.logo-pro {
+  color: #E84C88; /* Pink color */
+  font-size: 32px;
+  align-self: flex-end;
+  margin-top: -10px;
+}
+
+.splash-screen.logo-appear .app-logo,
+.splash-screen.draw-lines .app-logo,
+.splash-screen.show-text .app-logo,
+.splash-screen.complete .app-logo {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Grid lines animation */
+.grid-lines {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.h-line, .v-line {
+  position: absolute;
+  background-color: rgba(100, 150, 255, 0.2);
+  transform: scaleX(0);
+  transition: transform 1s ease;
+}
+
+.h-line {
+  height: 1px;
+  width: 100%;
+  left: 0;
+}
+
+.v-line {
+  width: 1px;
+  height: 100%;
+  top: 0;
+}
+
+/* Position the lines */
+.h-line.line-0 { top: 12.5%; }
+.h-line.line-1 { top: 25%; }
+.h-line.line-2 { top: 37.5%; }
+.h-line.line-3 { top: 50%; }
+.h-line.line-4 { top: 62.5%; }
+.h-line.line-5 { top: 75%; }
+.h-line.line-6 { top: 87.5%; }
+.h-line.line-7 { top: 100%; }
+
+.v-line.line-0 { left: 12.5%; }
+.v-line.line-1 { left: 25%; }
+.v-line.line-2 { left: 37.5%; }
+.v-line.line-3 { left: 50%; }
+.v-line.line-4 { left: 62.5%; }
+.v-line.line-5 { left: 75%; }
+.v-line.line-6 { left: 87.5%; }
+.v-line.line-7 { left: 100%; }
+
+.splash-screen.draw-lines .h-line,
+.splash-screen.show-text .h-line,
+.splash-screen.complete .h-line {
+  transform: scaleX(1);
+}
+
+.splash-screen.draw-lines .v-line,
+.splash-screen.show-text .v-line,
+.splash-screen.complete .v-line {
+  transform: scaleY(1);
+}
+
+/* Add delay to line animations */
+.h-line.line-0, .v-line.line-0 { transition-delay: 0s; }
+.h-line.line-1, .v-line.line-1 { transition-delay: 0.05s; }
+.h-line.line-2, .v-line.line-2 { transition-delay: 0.1s; }
+.h-line.line-3, .v-line.line-3 { transition-delay: 0.15s; }
+.h-line.line-4, .v-line.line-4 { transition-delay: 0.2s; }
+.h-line.line-5, .v-line.line-5 { transition-delay: 0.25s; }
+.h-line.line-6, .v-line.line-6 { transition-delay: 0.3s; }
+.h-line.line-7, .v-line.line-7 { transition-delay: 0.35s; }
+
+/* Compass animation */
+.compass {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  background-color: transparent;
+  z-index: 2;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition: opacity 0.5s ease, transform 2s ease;
+}
+
+.compass-circle {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 70px;
+  height: 70px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+.compass-needle {
+  position: absolute;
+  top: 5px;
+  left: 38px;
+  width: 4px;
+  height: 35px;
+  background: linear-gradient(to bottom, #E84C88 0%, #F7A41D 100%);
+  transform-origin: bottom center;
+}
+
+.compass-needle:after {
+  content: '';
+  position: absolute;
+  top: 35px;
+  left: -3px;
+  width: 10px;
+  height: 10px;
+  background-color: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+}
+
+.splash-screen.draw-lines .compass,
+.splash-screen.show-text .compass,
+.splash-screen.complete .compass {
+  opacity: 1;
+  transform: rotate(360deg);
+}
+
+/* Blueprint elements */
+.blueprint-elements {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.blueprint-rect, .blueprint-circle, .blueprint-line {
+  position: absolute;
+  border: 1px dashed rgba(100, 150, 255, 0.3);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.blueprint-rect {
+  width: 200px;
+  height: 100px;
+  right: 20px;
+  top: 50px;
+}
+
+.blueprint-circle {
+  width: 120px;
+  height: 120px;
+  left: 40px;
+  bottom: 40px;
+  border-radius: 50%;
+}
+
+.blueprint-line {
+  width: 150px;
+  height: 1px;
+  left: 20px;
+  top: 80px;
+  transform: rotate(45deg);
+}
+
+.splash-screen.show-text .blueprint-rect,
+.splash-screen.show-text .blueprint-circle,
+.splash-screen.show-text .blueprint-line,
+.splash-screen.complete .blueprint-rect,
+.splash-screen.complete .blueprint-circle,
+.splash-screen.complete .blueprint-line {
+  opacity: 1;
+}
+
+/* App info animations */
+.app-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #ffffff;
+  font-family: 'Arial', sans-serif;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  margin-bottom: 20px;
+}
+
+.version-info {
+  font-size: 14px;
+  margin-bottom: 5px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.license-info {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.trial-days {
+  color: #F7A41D;
+}
+
+.splash-screen.show-text .app-info,
+.splash-screen.complete .app-info {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Loading progress bar */
+.loading-bar {
+  width: 250px;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(to right, #F7A41D, #E84C88);
+  transition: width 3.5s ease;
+}
+
+.splash-screen.start .progress-bar {
+  width: 0%;
+}
+
+.splash-screen.logo-appear .progress-bar {
+  width: 30%;
+}
+
+.splash-screen.draw-lines .progress-bar {
+  width: 60%;
+}
+
+.splash-screen.show-text .progress-bar {
+  width: 100%;
+}
+
+/* Exit animation */
+.splash-screen.complete {
+  animation: exitFade 0.5s ease 3.5s forwards;
+}
+
+@keyframes exitFade {
+  0% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
