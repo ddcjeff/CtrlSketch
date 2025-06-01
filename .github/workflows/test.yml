@@ -32,12 +32,12 @@ jobs:
     - name: Run tests with coverage
       run: npm run test:coverage
       
-    - name: Upload coverage reports
-      uses: actions/upload-artifact@v3
-      with:
-        name: coverage-report
-        path: coverage/
-        
+   # - name: Upload coverage reports
+   #   uses: actions/upload-artifact@v3
+   #  with:
+   #    name: coverage-report
+   #    path: coverage/
+
     - name: Check test coverage
       run: |
         COVERAGE=$(cat coverage/coverage-summary.json | jq -r '.total.lines.pct')
