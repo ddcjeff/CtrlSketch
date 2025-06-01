@@ -1405,7 +1405,7 @@ export default {
     /**
      * Legacy method for backward compatibility
      */
-    debugInfo(e) {
+    showDebugInfo(e) {
       // Prevent the event from creating shapes
       if (e) {
         e.stopPropagation();

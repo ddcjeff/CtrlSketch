@@ -1,6 +1,6 @@
 <template>
   <div class="bg-gray-800 border-b border-gray-700 shadow-md h-28 overflow-x-auto">
-    <div class="w-full mx-auto px-2 py-1">
+    <div class="w-full mx-auto px-4 py-1">
       <template v-if="activeTab === 'Home'">
         <div class="flex gap-4 justify-start overflow-x-auto">
           <!-- Clipboard Section -->
@@ -389,6 +389,9 @@ export default {
 <style scoped>
 .nowrap {
   flex-wrap: nowrap;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 ::-webkit-scrollbar {
   height: 8px;
@@ -401,5 +404,40 @@ export default {
 }
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-500;
+}
+
+/* Wider but shorter ribbon buttons - optimized for horizontal space */
+button {
+  @apply min-w-[100px] px-3 py-0.5 text-xs h-6 flex items-center justify-start;
+}
+
+/* Improve section containers - wider with less vertical padding */
+.bg-gray-900 {
+  @apply min-w-[200px] px-3 py-1 rounded-lg shadow-sm;
+}
+
+/* Increase spacing between sections */
+.flex.gap-4 {
+  @apply gap-6;
+}
+
+/* Increase spacing between buttons */
+.flex.gap-1 {
+  @apply gap-2;
+}
+
+/* Improve section headers - less vertical space */
+h3 {
+  @apply text-xs font-medium text-gray-300 mb-0.5 uppercase tracking-wider;
+}
+
+/* Make icons more compact but still visible */
+button span:first-child {
+  @apply text-sm mr-1;
+}
+
+/* Improve button text */
+button span:nth-child(2) {
+  @apply font-medium;
 }
 </style>
