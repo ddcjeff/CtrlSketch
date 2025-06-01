@@ -1,1 +1,6 @@
 node_modules
+echo "dist/" >> .gitignore
+echo ".DS_Store" >> .gitignore
+echo "*.log" >> .gitignore
+echo "*.tmp" >> .gitignore
+echo "*~" >> .gitignore
