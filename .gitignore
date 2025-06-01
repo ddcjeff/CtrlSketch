@@ -1,6 +1,59 @@
-node_modules
-echo "dist/" >> .gitignore
-echo ".DS_Store" >> .gitignore
-echo "*.log" >> .gitignore
-echo "*.tmp" >> .gitignore
-echo "*~" >> .gitignore
+# .gitignore for CtrlSketch Pro
+
+# Node modules
+node_modules/
+
+# Build output
+/dist/
+
+# Logs
+*.log
+
+# Local env files
+.env
+.env.local
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.vscode/
+.idea/
+
+# Testing coverage
+coverage/
+
+# Vercel/Netlify
+.vercel/
+.netlify/
+
+# Optional: ignore Playwright test output
+playwright-report/
+test-results/
+# Optional: ignore Jest test output
+jest-test-results/
+# Optional: ignore Cypress test output
+cypress/screenshots/
+# Optional: ignore ESLint cache
+.eslintcache
+# Optional: ignore Prettier cache
+.prettiercache
+# Optional: ignore build artifacts
+dist/
+# Optional: ignore temporary files
+tmp/
+# Optional: ignore backup files
+*.bak
+# Optional: ignore lock files
+package-lock.json
+# Optional: ignore Yarn lock files
+yarn.lock
+# Optional: ignore pnpm lock files
+pnpm-lock.yaml
+# Optional: ignore specific editor files
+*.swp
+# Optional: ignore specific IDE files
+*.iml
+# Optional: ignore coverage reports
+coverage/
