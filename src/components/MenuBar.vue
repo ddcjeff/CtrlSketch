@@ -86,7 +86,7 @@
             <button
               v-for="tab in tabs"
               :key="tab.name"
-              class="px-3 py-1 text-sm font-medium rounded-md transition-all duration-200"
+              class="ribbon-tab px-3 py-1 text-sm font-medium rounded-md transition-all duration-200"
               :class="activeTab === tab.name ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'"
               @click="setActiveTab(tab.name)"
             >
@@ -98,9 +98,12 @@
           </div>
         </div>
         
-        <!-- Right side: Powered by HickSoft -->
-        <div class="text-white text-sm font-medium">
-          Powered by HickSoft
+        <!-- Right side: Glossy Toggle and Powered by HickSoft -->
+        <div class="flex items-center space-x-4">
+          <GlossyToggle />
+          <div class="text-white text-sm font-medium">
+            Powered by HickSoft
+          </div>
         </div>
       </div>
     </div>
@@ -108,7 +111,12 @@
 </template>
 
 <script>
+import GlossyToggle from './GlossyToggle.vue';
+
 export default {
+  components: {
+    GlossyToggle
+  },
   name: 'MenuBar',
   data() {
     return {

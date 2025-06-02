@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-gray-800 border-b border-gray-700 shadow-md h-28 overflow-x-auto">
+  <div class="ribbon bg-gray-800 border-b border-gray-700 shadow-md h-28 overflow-x-auto">
     <div class="w-full mx-auto px-4 py-1">
       <template v-if="activeTab === 'Home'">
         <div class="flex gap-4 justify-start overflow-x-auto">

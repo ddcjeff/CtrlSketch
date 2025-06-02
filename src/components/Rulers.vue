@@ -82,10 +82,12 @@ export default {
       return Array.from({ length: 11 * 4 + 1 }, (_, i) => i);
     },
     horizontalOffset() {
-      return this.windowWidth / 2 - this.canvasWidth / 2;
+      // Calculate the horizontal offset for the ruler
+      return Math.floor(this.windowWidth / 2 - this.canvasWidth / 2);
     },
     verticalOffset() {
-      return (this.windowHeight - 130) / 2 - this.canvasHeight / 2;
+      // Calculate the vertical offset for the ruler
+      return Math.floor((this.windowHeight - 130) / 2 - this.canvasHeight / 2);
     }
   }
 }
@@ -108,7 +110,7 @@ export default {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .vertical-ruler {
-  top: 150px;
+  top: 150px; /* 130px (horizontal ruler top) + 20px (horizontal ruler height) */
   bottom: 0;
   width: 20px;
   border-right: 1px solid #555;

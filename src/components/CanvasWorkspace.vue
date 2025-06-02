@@ -1,5 +1,5 @@
 <template>
-  <div ref="wrapper" class="wrapper" @dblclick="resetZoom">
+  <div ref="wrapper" class="wrapper canvas-workspace" @dblclick="resetZoom">
     <canvas
       ref="canvas"
       class="styled-canvas"
@@ -157,7 +157,7 @@ export default {
       },
       showDebugOverlay: false,
       debugInfo: {
-        position: { x: 10, y: 10 },
+        position: { x: 0, y: 0 }, // Will be centered when debug overlay is shown
         size: { width: 400, height: 400 },
         isDragging: false,
         dragStart: { x: 0, y: 0 }
@@ -1384,6 +1384,17 @@ export default {
       this.showDebugOverlay = !this.showDebugOverlay;
       
       console.log('Debug overlay toggled:', this.showDebugOverlay);
+      
+      // If showing the debug overlay, center it on the canvas
+      if (this.showDebugOverlay) {
+        // Calculate center position
+        const centerX = Math.max(0, (this.canvasWidth - this.debugInfo.size.width) / 2);
+        const centerY = Math.max(0, (this.canvasHeight - this.debugInfo.size.height) / 2);
+        
+        // Update position
+        this.debugInfo.position = { x: centerX, y: centerY };
+        console.log('Debug overlay centered at:', centerX, centerY);
+      }
       
       // Reset any active drawing or selection
       this.isDrawing = false;

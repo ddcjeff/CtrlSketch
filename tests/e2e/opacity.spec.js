@@ -5,39 +5,54 @@ test.describe('Layer Opacity Functionality', () => {
   test('should adjust layer opacity using the slider', async ({ page }) => {
     await page.goto('/');
     
+    // Wait for splash screen to disappear
+    await page.waitForTimeout(2000);
+    
     // Open the layers panel
-    await page.locator('.ribbon-tab:has-text("View")').click();
-    await page.locator('.ribbon-button:has-text("Layers")').click();
+    await page.locator('button.ribbon-tab:has-text("View")').click();
+    await page.locator('button:has-text("Layers")').click();
     
     // Verify the layers panel is visible
     const layersPanel = page.locator('.layers-panel');
     await expect(layersPanel).toBeVisible();
     
-    // Find the opacity slider for the first layer
-    const opacitySlider = page.locator('.layer-item').first().locator('input[type="range"]');
-    await expect(opacitySlider).toBeVisible();
+    // Find the first layer item
+    const layerItem = page.locator('.layer-item').first();
+    await expect(layerItem).toBeVisible({ timeout: 15000 });
     
-    // Get the initial value
-    const initialValue = await opacitySlider.inputValue();
+    // Find the opacity button (third button in the layer controls)
+    const opacityButton = layerItem.locator('.layer-button').nth(2);
+    await expect(opacityButton).toBeVisible({ timeout: 5000 });
     
-    // Set the opacity to 50%
+    // Click the opacity button to show the slider
+    await opacityButton.click();
+    
+    // Wait for the opacity slider to appear
+    await page.waitForTimeout(500);
+    
+    // Now find the opacity slider
+    const opacitySlider = page.locator('.opacity-slider-container input[type="range"]');
+    await expect(opacitySlider).toBeVisible({ timeout: 5000 });
+    
+    // Change the opacity to 50%
     await opacitySlider.fill('50');
     
     // Verify the value changed
     await expect(opacitySlider).toHaveValue('50');
     
-    // Check that the layer's visual representation reflects the opacity change
-    // This might need to be adjusted based on how your app handles opacity
-    const layerElement = page.locator('.layer-item').first();
-    await expect(layerElement.locator('.opacity-value')).toContainText('50');
+    // Check that the layer's opacity button title reflects the change
+    await expect(opacityButton).toHaveAttribute('title', /50%/);
   });
 
   test('should update the canvas when layer opacity changes', async ({ page }) => {
     await page.goto('/');
     
+    // Wait for splash screen to disappear
+    await page.waitForTimeout(2000);
+    
     // Draw a shape first
-    await page.locator('.ribbon-tab:has-text("Home")').click();
-    await page.locator('.ribbon-button:has-text("Rectangle")').click();
+    await page.locator('button.ribbon-tab:has-text("Draw")').click();
+    await page.locator('button:has-text("Rectangle")').click();
     
     const canvas = page.locator('.canvas-workspace');
     const boundingBox = await canvas.boundingBox();
@@ -59,11 +74,26 @@ test.describe('Layer Opacity Functionality', () => {
     }
     
     // Open the layers panel
-    await page.locator('.ribbon-tab:has-text("View")').click();
-    await page.locator('.ribbon-button:has-text("Layers")').click();
+    await page.locator('button.ribbon-tab:has-text("View")').click();
+    await page.locator('button:has-text("Layers")').click();
     
-    // Find the opacity slider for the layer with the shape
-    const opacitySlider = page.locator('.layer-item').first().locator('input[type="range"]');
+    // Find the first layer item
+    const layerItem = page.locator('.layer-item').first();
+    await expect(layerItem).toBeVisible({ timeout: 15000 });
+    
+    // Find the opacity button (third button in the layer controls)
+    const opacityButton = layerItem.locator('.layer-button').nth(2);
+    await expect(opacityButton).toBeVisible({ timeout: 5000 });
+    
+    // Click the opacity button to show the slider
+    await opacityButton.click();
+    
+    // Wait for the opacity slider to appear
+    await page.waitForTimeout(500);
+    
+    // Now find the opacity slider
+    const opacitySlider = page.locator('.opacity-slider-container input[type="range"]');
+    await expect(opacitySlider).toBeVisible({ timeout: 5000 });
     
     // Change the opacity to 50%
     await opacitySlider.fill('50');
