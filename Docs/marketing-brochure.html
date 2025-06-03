@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CtrlSketch Pro - Marketing Brochure</title>
+    <style>
+        :root {
+            --ctrl-color: #F7A41D;
+            --sketch-color: #000000;
+            --pro-color: #E84C88;
+            --primary-bg: #151a21;
+            --secondary-bg: #1e2630;
+            --light-text: #f5f5f7;
+            --accent: #3a7bec;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--primary-bg);
+            color: var(--light-text);
+            line-height: 1.6;
+        }
+        
+        .brochure {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 50px 20px;
+        }
+        
+        .brochure-page {
+            background: linear-gradient(135deg, var(--secondary-bg), var(--primary-bg));
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            height: 842px; /* A4 height scaled */
+            position: relative;
+        }
+        
+        /* Cover Page */
+        .cover {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            height: 100%;
+            background: radial-gradient(circle at 70% 30%, rgba(58, 123, 236, 0.2), transparent 70%),
+                        radial-gradient(circle at 30% 70%, rgba(232, 76, 136, 0.2), transparent 70%);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .cover::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: linear-gradient(45deg, rgba(247, 164, 29, 0.05), rgba(232, 76, 136, 0.05));
+            border-radius: 50%;
+            top: -100px;
+            right: -100px;
+            filter: blur(50px);
+        }
+        
+        .cover::after {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: linear-gradient(135deg, rgba(58, 123, 236, 0.05), rgba(247, 164, 29, 0.05));
+            border-radius: 50%;
+            bottom: -100px;
+            left: -100px;
+            filter: blur(40px);
+        }
+        
+        .logo-large {
+            font-size: 4.5rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .logo-large span.ctrl {
+            color: var(--ctrl-color);
+        }
+        
+        .logo-large span.sketch {
+            color: var(--light-text);
+        }
+        
+        .logo-large span.pro {
+            color: var(--pro-color);
+            font-size: 3rem;
+            vertical-align: super;
+            font-weight: 700;
+        }
+        
+        .cover h2 {
+            font-size: 2.2rem;
+            margin-bottom: 30px;
+            max-width: 700px;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1.3;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .cover p {
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+            max-width: 600px;
+            color: rgba(245, 245, 247, 0.9);
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Feature Spread */
+        .feature-spread {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            height: 100%;
+        }
+        
+        .feature-image {
+            background-color: rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .feature-image::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, 
+                rgba(247, 164, 29, 0.1), 
+                rgba(232, 76, 136, 0.1));
+            z-index: 0;
+        }
+        
+        .feature-image img {
+            width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 1;
+        }
+        
+        .feature-content {
+            padding: 60px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .section-title {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1.2;
+        }
+        
+        .feature-list {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+        
+        .feature-item {
+            margin-bottom: 25px;
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .feature-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            flex-shrink: 0;
+            font-size: 1.5rem;
+            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        .feature-text {
+            flex-grow: 1;
+        }
+        
+        .feature-item h3 {
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+            color: var(--light-text);
+        }
+        
+        .feature-item p {
+            color: rgba(245, 245, 247, 0.8);
+            font-size: 0.95rem;
+        }
+        
+        /* Comparison Page */
+        .comparison {
+            padding: 40px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .comparison-title {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .comparison-table th {
+            font-size: 1.1rem;
+            color: var(--light-text);
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        
+        .comparison-table tr:nth-child(even) {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        .comparison-table td {
+            color: rgba(245, 245, 247, 0.8);
+        }
+        
+        .comparison-table td:first-child {
+            font-weight: 500;
+            color: var(--light-text);
+        }
+        
+        .check {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .cross {
+            color: #F44336;
+        }
+        
+        .comparison-note {
+            font-style: italic;
+            color: rgba(245, 245, 247, 0.7);
+            text-align: center;
+            margin-top: auto;
+            padding-top: 20px;
+        }
+        
+        /* Back Cover */
+        .back-cover {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 60px 40px;
+            background: linear-gradient(135deg, var(--primary-bg), var(--secondary-bg));
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .back-cover::before {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(58, 123, 236, 0.1), transparent 70%);
+            bottom: -250px;
+            right: -250px;
+            border-radius: 50%;
+        }
+        
+        .contact-info {
+            margin-top: auto;
+        }
+        
+        .contact-title {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .contact-list {
+            list-style: none;
+            margin-bottom: 40px;
+        }
+        
+        .contact-list li {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            color: rgba(245, 245, 247, 0.9);
+        }
+        
+        .contact-list li strong {
+            margin-right: 10px;
+            color: var(--ctrl-color);
+        }
+        
+        .logo-small {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 20px;
+        }
+        
+        .logo-small span.ctrl {
+            color: var(--ctrl-color);
+        }
+        
+        .logo-small span.sketch {
+            color: var(--light-text);
+        }
+        
+        .logo-small span.pro {
+            color: var(--pro-color);
+            font-size: 1.5rem;
+            vertical-align: super;
+            font-weight: 700;
+        }
+        
+        .copyright {
+            color: rgba(245, 245, 247, 0.6);
+            font-size: 0.9rem;
+            margin-top: 20px;
+        }
+        
+        @media print {
+            body {
+                background-color: white;
+            }
+            
+            .brochure-page {
+                box-shadow: none;
+                page-break-after: always;
+                margin-bottom: 0;
+                height: 100vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="brochure">
+        <!-- Cover Page -->
+        <div class="brochure-page">
+            <div class="cover">
+                <div class="logo-large">
+                    <span class="ctrl">Ctrl</span><span class="sketch">Sketch</span><span class="pro">Pro</span>
+                </div>
+                <h2>Advanced Technical Diagramming Software</h2>
+                <p>Precision tools for engineers, designers, and technical professionals that streamline documentation workflow and enhance collaboration.</p>
+                <div style="position: relative; z-index: 1;">
+                    <svg width="300" height="300" viewBox="0 0 300 300">
+                        <defs>
+                            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#F7A41D;stop-opacity:0.8" />
+                                <stop offset="100%" style="stop-color:#E84C88;stop-opacity:0.8" />
+                            </linearGradient>
+                        </defs>
+                        <!-- Circuit diagram shapes -->
+                        <rect x="50" y="50" width="80" height="50" rx="5" fill="rgba(58, 123, 236, 0.2)" stroke="url(#grad1)" stroke-width="2" />
+                        <rect x="170" y="50" width="80" height="50" rx="5" fill="rgba(58, 123, 236, 0.2)" stroke="url(#grad1)" stroke-width="2" />
+                        <rect x="110" y="150" width="80" height="50" rx="5" fill="rgba(58, 123, 236, 0.2)" stroke="url(#grad1)" stroke-width="2" />
+                        <rect x="50" y="200" width="80" height="50" rx="5" fill="rgba(58, 123, 236, 0.2)" stroke="url(#grad1)" stroke-width="2" />
+                        <rect x="170" y="200" width="80" height="50" rx="5" fill="rgba(58, 123, 236, 0.2)" stroke="url(#grad1)" stroke-width="2" />
+                        
+                        <!-- Connection lines -->
+                        <path d="M90 100 L90 120 L110 120 L110 150" fill="none" stroke="url(#grad1)" stroke-width="2" />
+                        <path d="M210 100 L210 120 L190 120 L190 150" fill="none" stroke="url(#grad1)" stroke-width="2" />
+                        <path d="M150 200 L150 220 L170 220" fill="none" stroke="url(#grad1)" stroke-width="2" />
+                        <path d="M150 200 L150 220 L130 220" fill="none" stroke="url(#grad1)" stroke-width="2" />
+                        
+                        <!-- Arrow heads -->
+                        <polygon points="170,216 170,224 178,220" fill="url(#grad1)" />
+                        <polygon points="130,216 130,224 122,220" fill="url(#grad1)" />
+                        
+                        <!-- Connection points -->
+                        <circle cx="90" cy="75" r="4" fill="#E84C88" />
+                        <circle cx="210" cy="75" r="4" fill="#E84C88" />
+                        <circle cx="150" cy="175" r="4" fill="#E84C88" />
+                        <circle cx="90" cy="225" r="4" fill="#E84C88" />
+                        <circle cx="210" cy="225" r="4" fill="#E84C88" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Feature Spread 1 -->
+        <div class="brochure-page">
+            <div class="feature-spread">
+                <div class="feature-image">
+                    <img src="#" alt="CtrlSketch Pro Interface" />
+                </div>
+                <div class="feature-content">
+                    <h2 class="section-title">Powerful Drawing Features</h2>
+                    <ul class="feature-list">
+                        <li class="feature-item">
+                            <div class="feature-icon">🔌</div>
+                            <div class="feature-text">
+                                <h3>Smart Connections</h3>
+                                <p>Create intelligent connectors that snap to connection points with customizable line styles, thickness, and arrow types.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">📊</div>
+                            <div class="feature-text">
+                                <h3>Bill of Materials</h3>
+                                <p>Automatically generate and export comprehensive BOMs with customizable fields for part numbers, manufacturers, and more.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">🔄</div>
+                            <div class="feature-text">
+                                <h3>Database Integration</h3>
+                                <p>Store your parts, documents, and associated PDFs in a robust cloud database with secure access from anywhere.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">📁</div>
+                            <div class="feature-text">
+                                <h3>Multi-Page Documents</h3>
+                                <p>Organize complex projects across multiple pages with intuitive tabbed navigation and cross-referencing.</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Feature Spread 2 -->
+        <div class="brochure-page">
+            <div class="feature-spread">
+                <div class="feature-content">
+                    <h2 class="section-title">Technical Excellence</h2>
+                    <ul class="feature-list">
+                        <li class="feature-item">
+                            <div class="feature-icon">🎨</div>
+                            <div class="feature-text">
+                                <h3>Line Styling Options</h3>
+                                <p>Choose from solid, dashed, or dotted lines with adjustable thickness (1-10px) and six arrow style variations for precise technical diagrams.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">⚙️</div>
+                            <div class="feature-text">
+                                <h3>Custom Parts</h3>
+                                <p>Create and manage custom parts with detailed properties that automatically sync with your database and BOM generation.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">📱</div>
+                            <div class="feature-text">
+                                <h3>Cross-Platform</h3>
+                                <p>Use CtrlSketch Pro as a web application or install it as a desktop application with our Electron packaging for Windows, macOS, and Linux.</p>
+                            </div>
+                        </li>
+                        <li class="feature-item">
+                            <div class="feature-icon">🔒</div>
+                            <div class="feature-text">
+                                <h3>Secure Licensing</h3>
+                                <p>Flexible licensing options with tiered features to meet the needs of individuals, teams, and enterprises with secure activation.</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+                <div class="feature-image">
+                    <img src="#" alt="CtrlSketch Pro Technical Features" />
+                </div>
+            </div>
+        </div>
+        
+        <!-- Comparison Page -->
+        <div class="brochure-page">
+            <div class="comparison">
+                <div class="comparison-title">
+                    <h2 class="section-title">CtrlSketch Pro vs. Alternatives</h2>
+                    <p style="text-align: center; margin-bottom: 20px; color: rgba(245, 245, 247, 0.8);">See why technical professionals are making the switch to CtrlSketch Pro</p>
+                </div>
+                
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>CtrlSketch Pro</th>
+                            <th>MS Visio</th>
+                            <th>Other CAD Tools</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Smart Connection Points</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>Customizable Line Styles</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>Integrated BOM Generation</td>
+                            <td class="check">✓</td>
+                            <td class="cross">Limited</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>Cloud Database Integration</td>
+                            <td class="check">✓</td>
+                            <td class="cross">×</td>
+                            <td class="cross">Limited</td>
+                        </tr>
+                        <tr>
+                            <td>Part Library Management</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>PDF Association</td>
+                            <td class="check">✓</td>
+                            <td class="cross">×</td>
+                            <td class="cross">×</td>
+                        </tr>
+                        <tr>
+                            <td>Multi-Page Documents</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                            <td class="cross">Limited</td>
+                        </tr>
+                        <tr>
+                            <td>Cross-Platform Support</td>
+                            <td class="check">✓</td>
+                            <td class="cross">Windows Only</td>
+                            <td class="cross">Varies</td>
+                        </tr>
+                        <tr>
+                            <td>Installation Package</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>Flexible Licensing</td>
+                            <td class="check">✓</td>
+                            <td class="cross">Limited</td>
+                            <td class="cross">Limited</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <p class="comparison-note">* Based on feature comparison as of April 2025</p>
+            </div>
+        </div>
+        
+        <!-- Back Cover -->
+        <div class="brochure-page">
+            <div class="back-cover">
+                <div class="logo-small">
+                    <span class="ctrl">Ctrl</span><span class="sketch">Sketch</span><span class="pro">Pro</span>
+                </div>
+                <p style="margin-bottom: 30px; color: rgba(245, 245, 247, 0.9); max-width: 600px;">Transform your technical documentation process with the most advanced diagramming software designed specifically for engineers and technical professionals.</p>
+                
+                <div style="margin-bottom: 30px;">
+                    <h3 style="font-size: 1.5rem; margin-bottom: 15px; color: var(--light-text);">Ready to get started?</h3>
+                    <p style="margin-bottom: 20px; color: rgba(245, 245, 247, 0.8);">Try CtrlSketch Pro free for 14 days with no credit card required.</p>
+                    <div style="display: inline-block; background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color)); color: white; padding: 15px 30px; border-radius: 30px; font-weight: 600;">www.ctrlsketchpro.com/trial</div>
+                </div>
+                
+                <div class="contact-info">
+                    <h3 class="contact-title">Contact Us</h3>
+                    <ul class="contact-list">
+                        <li><strong>Email:</strong> info@ctrlsketchpro.com</li>
+                        <li><strong>Phone:</strong> +1 (555) 123-4567</li>
+                        <li><strong>Web:</strong> www.ctrlsketchpro.com</li>
+                    </ul>
+                </div>
+                
+                <p class="copyright">&copy; 2025 CtrlSketch Pro. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

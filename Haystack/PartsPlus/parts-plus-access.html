@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parts Plus Component</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+    
+    .loader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      transition: opacity 0.5s;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid #f3f3f3;
+      border-top: 5px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .message {
+      font-size: 18px;
+      color: #333;
+      text-align: center;
+      max-width: 80%;
+    }
+
+    #root {
+      height: 100%;
+      overflow: auto;
+    }
+  </style>
+  <link rel="stylesheet" href="PartsPlus/PartsPlus.css">
+</head>
+<body>
+  <div id="loader" class="loader">
+    <div class="spinner"></div>
+    <div class="message">Loading Parts Plus Component...</div>
+  </div>
+  
+  <div id="root"></div>
+  
+  <!-- Load React -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Load our compiled JSX -->
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="PartsPlus/PartFormModal.jsx" type="text/babel"></script>
+  <script src="PartsPlus/PartsImporter.js"></script>
+  <script src="PartsPlus/PartsPlus.jsx" type="text/babel"></script>
+  
+  <script type="text/babel">
+    // Render the PartsPlus component into the root element
+    document.addEventListener('DOMContentLoaded', function() {
+      // Give the Babel compiler time to do its work
+      setTimeout(() => {
+        if (typeof window.PartsPlus === 'function') {
+          try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(React.createElement(window.PartsPlus));
+            console.log('PartsPlus component rendered successfully');
+            
+            // Hide loader
+            const loader = document.getElementById('loader');
+            loader.style.opacity = '0';
+            setTimeout(() => {
+              loader.style.display = 'none';
+            }, 500);
+          } catch (error) {
+            console.error('Error rendering PartsPlus component:', error);
+            document.getElementById('loader').querySelector('.message').textContent = 
+              'Error loading Parts Plus: ' + error.message;
+          }
+        } else {
+          console.error('PartsPlus component not found on window object');
+          document.getElementById('loader').querySelector('.message').textContent = 
+            'Error: PartsPlus component not found. Please check the console for details.';
+        }
+      }, 1000);
+    });
+    
+    // If loading takes too long, show error message after 10 seconds
+    setTimeout(() => {
+      const loader = document.getElementById('loader');
+      if (loader.style.display !== 'none') {
+        loader.querySelector('.spinner').style.display = 'none';
+        loader.querySelector('.message').textContent = 
+          'Loading is taking longer than expected. Please check console for errors.';
+      }
+    }, 10000);
+  </script>
+</body>
+</html>

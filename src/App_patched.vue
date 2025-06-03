@@ -209,7 +209,8 @@
       :initial-position="bomGeneratorPosition"
       :pages="pages"
       :shapes="shapes"
-@close="showBOMGenerator = false"
+      :current-page-id="currentPageId"
+      @close="showBOMGenerator = false"
       @notification="showNotification"
     />
     
@@ -291,8 +292,7 @@ import PartPropertiesDialog from './components/PartPropertiesDialog.vue'
 import BOMGenerator from './components/BOMGenerator.vue'
 import DragHelper from './components/DragHelper.vue'
 import jsPDF from 'jspdf'
-import { saveAs } from 'file-saver';
-const version = __APP_VERSION__;
+import { version } from '../package.json'
 
 export default {
   components: {
@@ -393,7 +393,6 @@ export default {
   },
   data() {
     return {
-      _skipHistoryAdd: false,
       currentTool: null,
       currentStyles: { lineWidth: 2, stroke: '#000000', fill: '#000000', lineStyle: 'solid' },
       textStyles: { lineWidth: 1, stroke: '#000000', fill: '#000000', lineStyle: 'solid' },
@@ -2368,7 +2367,6 @@ export default {
     },
     addHistory(shapes) {
       if (this._skipHistoryAdd) return;
-      if (this._skipHistoryAdd) return;
       try {
         let shapesToAdd;
         if (Array.isArray(shapes)) {
@@ -2495,8 +2493,6 @@ export default {
       this.shapes = shapes.filter(shape => shape.type !== 'select');
     },
     updateHistory(shapes) {
-      if (this._skipHistoryAdd) return;
-      this._skipHistoryAdd = true;
       console.log('updateHistory called with shapes:', shapes ? shapes.length : 'none');
       
       // Make sure we have a valid shapes array
@@ -2510,11 +2506,9 @@ export default {
       
       // Add to history
       this.addHistory(shapes);
-      this._skipHistoryAdd = false;
     },
     deleteHistory(shapes) {
       this.addHistory(shapes);
-      this._skipHistoryAdd = false;
     },
     undo() {
       if (Date.now() - (this._lastUndoTime || 0) < 100) return;

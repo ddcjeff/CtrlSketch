@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CtrlSketch Pro - Advanced Technical Diagram Software</title>
+    <style>
+        :root {
+            --ctrl-color: #F7A41D;
+            --sketch-color: #000000;
+            --pro-color: #E84C88;
+            --primary-bg: #151a21;
+            --secondary-bg: #1e2630;
+            --light-text: #f5f5f7;
+            --accent: #3a7bec;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--primary-bg);
+            color: var(--light-text);
+            line-height: 1.6;
+        }
+        
+        header {
+            background: linear-gradient(135deg, var(--secondary-bg), var(--primary-bg));
+            padding: 1.5rem 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .logo {
+            font-size: 2.8rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+        }
+        
+        .logo span.ctrl {
+            color: var(--ctrl-color);
+        }
+        
+        .logo span.sketch {
+            color: var(--light-text);
+        }
+        
+        .logo span.pro {
+            color: var(--pro-color);
+            font-size: 1.8rem;
+            vertical-align: super;
+            font-weight: 700;
+        }
+        
+        .hero {
+            padding: 4rem 0;
+            background: radial-gradient(circle at top right, rgba(58, 123, 236, 0.1), transparent 60%),
+                        radial-gradient(circle at bottom left, rgba(232, 76, 136, 0.1), transparent 60%);
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 3.4rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1.2;
+        }
+        
+        .tagline {
+            font-size: 1.5rem;
+            margin-bottom: 2.5rem;
+            font-weight: 300;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent), var(--pro-color));
+            color: white;
+            padding: 0.8rem 2rem;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+            box-shadow: 0 4px 15px rgba(232, 76, 136, 0.3);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 7px 15px rgba(232, 76, 136, 0.4);
+        }
+        
+        .features {
+            padding: 5rem 0;
+        }
+        
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: var(--light-text);
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .feature-card {
+            background-color: var(--secondary-bg);
+            border-radius: 10px;
+            padding: 2rem;
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            height: 100%;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .feature-title {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--light-text);
+        }
+        
+        .feature-desc {
+            color: rgba(245, 245, 247, 0.8);
+        }
+        
+        .showcase {
+            padding: 5rem 0;
+            background-color: var(--secondary-bg);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .showcase::before {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(247, 164, 29, 0.1), transparent 70%);
+            top: -200px;
+            right: -200px;
+            border-radius: 50%;
+            z-index: 0;
+        }
+        
+        .showcase-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+        }
+        
+        .showcase-image {
+            width: 100%;
+            max-width: 900px;
+            border-radius: 10px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            margin: 3rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .testimonials {
+            padding: 5rem 0;
+        }
+        
+        .testimonial-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .testimonial-card {
+            background-color: var(--secondary-bg);
+            border-radius: 10px;
+            padding: 2rem;
+            position: relative;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .testimonial-text {
+            font-style: italic;
+            margin-bottom: 1.5rem;
+            color: rgba(245, 245, 247, 0.9);
+        }
+        
+        .testimonial-author {
+            font-weight: 600;
+            color: var(--light-text);
+        }
+        
+        .testimonial-role {
+            color: rgba(245, 245, 247, 0.7);
+            font-size: 0.9rem;
+        }
+        
+        .quotation {
+            font-size: 4rem;
+            position: absolute;
+            top: -20px;
+            left: 20px;
+            opacity: 0.1;
+            color: var(--ctrl-color);
+        }
+        
+        .pricing {
+            padding: 5rem 0;
+            background-color: var(--secondary-bg);
+        }
+        
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        
+        .pricing-card {
+            background-color: var(--primary-bg);
+            border-radius: 10px;
+            padding: 3rem 2rem;
+            text-align: center;
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .pricing-card.popular {
+            position: relative;
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(232, 76, 136, 0.3);
+            border: 2px solid var(--pro-color);
+        }
+        
+        .popular-badge {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 30px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .pricing-card:hover {
+            transform: translateY(-10px);
+        }
+        
+        .pricing-card.popular:hover {
+            transform: scale(1.05) translateY(-10px);
+        }
+        
+        .pricing-title {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: var(--light-text);
+        }
+        
+        .pricing-price {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            color: var(--light-text);
+        }
+        
+        .pricing-period {
+            font-size: 1rem;
+            color: rgba(245, 245, 247, 0.7);
+        }
+        
+        .pricing-features {
+            list-style: none;
+            margin-bottom: 2rem;
+            flex-grow: 1;
+        }
+        
+        .pricing-features li {
+            margin-bottom: 0.8rem;
+            color: rgba(245, 245, 247, 0.8);
+        }
+        
+        .pricing-features li::before {
+            content: "✓";
+            color: var(--ctrl-color);
+            margin-right: 0.5rem;
+            font-weight: bold;
+        }
+        
+        .pricing-button {
+            display: inline-block;
+            background-color: transparent;
+            color: var(--light-text);
+            padding: 0.8rem 2rem;
+            border-radius: 30px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border: 2px solid var(--accent);
+        }
+        
+        .pricing-card.popular .pricing-button {
+            background: linear-gradient(135deg, var(--accent), var(--pro-color));
+            border: none;
+            color: white;
+            box-shadow: 0 4px 10px rgba(232, 76, 136, 0.3);
+        }
+        
+        .pricing-button:hover {
+            background-color: var(--accent);
+            color: white;
+        }
+        
+        .pricing-card.popular .pricing-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 7px 15px rgba(232, 76, 136, 0.4);
+        }
+        
+        .faq {
+            padding: 5rem 0;
+        }
+        
+        .faq-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 2rem;
+        }
+        
+        .faq-item {
+            margin-bottom: 2rem;
+        }
+        
+        .faq-question {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: var(--light-text);
+            display: flex;
+            align-items: center;
+        }
+        
+        .faq-question::before {
+            content: "Q:";
+            color: var(--ctrl-color);
+            font-weight: bold;
+            margin-right: 0.5rem;
+            font-size: 1.5rem;
+        }
+        
+        .faq-answer {
+            color: rgba(245, 245, 247, 0.8);
+            padding-left: 2rem;
+        }
+        
+        .cta-section {
+            padding: 5rem 0;
+            text-align: center;
+            background: linear-gradient(135deg, var(--primary-bg), var(--secondary-bg));
+        }
+        
+        .cta-title {
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--ctrl-color), var(--pro-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .cta-text {
+            font-size: 1.2rem;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            color: rgba(245, 245, 247, 0.9);
+        }
+        
+        footer {
+            padding: 3rem 0;
+            background-color: var(--primary-bg);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .footer-content {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        
+        .footer-column {
+            flex: 1;
+            min-width: 200px;
+            margin-bottom: 2rem;
+        }
+        
+        .footer-title {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            color: var(--light-text);
+        }
+        
+        .footer-links {
+            list-style: none;
+        }
+        
+        .footer-links li {
+            margin-bottom: 0.8rem;
+        }
+        
+        .footer-links a {
+            color: rgba(245, 245, 247, 0.7);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+        
+        .footer-links a:hover {
+            color: var(--ctrl-color);
+        }
+        
+        .footer-bottom {
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            color: rgba(245, 245, 247, 0.6);
+            font-size: 0.9rem;
+        }
+        
+        .social-links {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .social-link {
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--light-text);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .social-link:hover {
+            background-color: var(--ctrl-color);
+            transform: translateY(-3px);
+        }
+        
+        /* Animated gradient button */
+        .gradient-btn {
+            position: relative;
+            display: inline-block;
+            color: white;
+            padding: 1rem 2.5rem;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-decoration: none;
+            overflow: hidden;
+            background-color: var(--pro-color);
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(232, 76, 136, 0.3);
+            z-index: 1;
+        }
+        
+        .gradient-btn:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 200%;
+            height: 100%;
+            background: linear-gradient(115deg, 
+                var(--ctrl-color) 0%, 
+                var(--pro-color) 25%, 
+                var(--accent) 50%, 
+                var(--pro-color) 75%, 
+                var(--ctrl-color) 100%);
+            z-index: -1;
+            transition: transform 0.6s ease;
+        }
+        
+        .gradient-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(232, 76, 136, 0.4);
+        }
+        
+        .gradient-btn:hover:before {
+            transform: translateX(-50%);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.5rem;
+            }
+            
+            .tagline {
+                font-size: 1.2rem;
+            }
+            
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .faq-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .pricing-card.popular {
+                transform: none;
+            }
+            
+            .pricing-card.popular:hover {
+                transform: translateY(-10px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo">
+                <span class="ctrl">Ctrl</span><span class="sketch">Sketch</span><span class="pro">Pro</span>
+            </div>
+        </div>
+    </header>
+    
+    <section class="hero">
+        <div class="container">
+            <h1>Precision Diagramming for Technical Professionals</h1>
+            <p class="tagline">Create, Connect, Document & Manage Technical Diagrams with Unmatched Precision</p>
+            <a href="#" class="gradient-btn">Free Trial</a>
+        </div>
+    </section>
+    
+    <section class="features">
+        <div class="container">
+            <h2 class="section-title">Powerful Features for Technical Drawing</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔌</div>
+                    <h3 class="feature-title">Intelligent Connections</h3>
+                    <p class="feature-desc">Create wiring diagrams with smart connections that automatically snap to connection points. Customize line styles, thickness, and arrow types.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3 class="feature-title">Bill of Materials Generation</h3>
+                    <p class="feature-desc">Automatically generate BOMs directly from your diagrams. Track part numbers, quantities, manufacturers, and installation status with ease.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📄</div>
+                    <h3 class="feature-title">Multi-Page Documents</h3>
+                    <p class="feature-desc">Organize complex projects across multiple pages with intuitive tabbed navigation. Cross-reference parts across drawings effortlessly.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <h3 class="feature-title">Cloud Database Integration</h3>
+                    <p class="feature-desc">Store and manage parts, documents, and associated PDFs in a robust cloud database. Access your data securely from anywhere.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3 class="feature-title">Customizable Drawing Tools</h3>
+                    <p class="feature-desc">Fine-tune your diagrams with precision drawing tools. Adjust line thickness, choose from multiple line styles, and select from various arrow types.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3 class="feature-title">Cross-Platform Compatibility</h3>
+                    <p class="feature-desc">Work seamlessly across devices with responsive design. Install as a desktop application with our Electron packaging.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="showcase">
+        <div class="container showcase-content">
+            <h2 class="section-title">See CtrlSketch Pro in Action</h2>
+            <p style="max-width: 700px; margin: 0 auto 2rem; color: rgba(245, 245, 247, 0.9);">Experience the intuitive interface that makes technical diagramming simpler and more efficient than ever before.</p>
+            <img src="#" alt="CtrlSketch Pro Interface" class="showcase-image">
+            <a href="#" class="cta-button">Watch Demo</a>
+        </div>
+    </section>
+    
+    <section class="testimonials">
+        <div class="container">
+            <h2 class="section-title">What Our Users Say</h2>
+            <div class="testimonial-grid">
+                <div class="testimonial-card">
+                    <div class="quotation">"</div>
+                    <p class="testimonial-text">CtrlSketch Pro has completely transformed our engineering documentation workflow. The BOM generation alone has saved us countless hours of manual work.</p>
+                    <p class="testimonial-author">Robert Chen</p>
+                    <p class="testimonial-role">Senior Electrical Engineer</p>
+                </div>
+                
+                <div class="testimonial-card">
+                    <div class="quotation">"</div>
+                    <p class="testimonial-text">As someone who used Visio for years, the transition to CtrlSketch Pro has been seamless and incredibly rewarding. The connection tools are simply superior.</p>
+                    <p class="testimonial-author">Sarah Johnson</p>
+                    <p class="testimonial-role">Systems Integration Specialist</p>
+                </div>
+                
+                <div class="testimonial-card">
+                    <div class="quotation">"</div>
+                    <p class="testimonial-text">The cloud database integration means my entire team can collaborate on technical drawings in real-time. It's completely changed how we approach complex projects.</p>
+                    <p class="testimonial-author">Michael Rodriguez</p>
+                    <p class="testimonial-role">Project Manager</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="pricing">
+        <div class="container">
+            <h2 class="section-title">Choose Your Plan</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3 class="pricing-title">Starter</h3>
+                    <p class="pricing-price">$49<span class="pricing-period">/month</span></p>
+                    <ul class="pricing-features">
+                        <li>Single-user license</li>
+                        <li>Basic drawing tools</li>
+                        <li>5 documents</li>
+                        <li>Standard line styles</li>
+                        <li>CSV export</li>
+                        <li>Email support</li>
+                    </ul>
+                    <a href="#" class="pricing-button">Get Started</a>
+                </div>
+                
+                <div class="pricing-card popular">
+                    <div class="popular-badge">Most Popular</div>
+                    <h3 class="pricing-title">Professional</h3>
+                    <p class="pricing-price">$99<span class="pricing-period">/month</span></p>
+                    <ul class="pricing-features">
+                        <li>Multi-user license (up to 5)</li>
+                        <li>Advanced drawing tools</li>
+                        <li>Unlimited documents</li>
+                        <li>All line & arrow styles</li>
+                        <li>BOM generation & export</li>
+                        <li>Cloud database access</li>
+                        <li>Priority support</li>
+                    </ul>
+                    <a href="#" class="pricing-button">Get Started</a>
+                </div>
+                
+                <div class="pricing-card">
+                    <h3 class="pricing-title">Enterprise</h3>
+                    <p class="pricing-price">$199<span class="pricing-period">/month</span></p>
+                    <ul class="pricing-features">
+                        <li>Unlimited users</li>
+                        <li>All Pro features</li>
+                        <li>Advanced database integration</li>
+                        <li>Custom part libraries</li>
+                        <li>API access</li>
+                        <li>On-premise deployment option</li>
+                        <li>Dedicated support manager</li>
+                    </ul>
+                    <a href="#" class="pricing-button">Contact Sales</a>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="faq">
+        <div class="container">
+            <h2 class="section-title">Frequently Asked Questions</h2>
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <h3 class="faq-question">Can I migrate my existing Visio drawings?</h3>
+                    <p class="faq-answer">Yes, CtrlSketch Pro supports importing Visio files (.vsdx) and can convert them to our native .CSP format while preserving most elements and properties.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h3 class="faq-question">How does the licensing system work?</h3>
+                    <p class="faq-answer">CtrlSketch Pro uses a subscription model with tiered features. You'll receive a license key that can be activated on your machine, with different tiers allowing different numbers of activations.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h3 class="faq-question">Is my data secure in the cloud database?</h3>
+                    <p class="faq-answer">Absolutely. We use industry-standard encryption for all data in transit and at rest. Enterprise customers also have the option for on-premise deployment.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h3 class="faq-question">Can I customize the parts library?</h3>
+                    <p class="faq-answer">Yes, all plans allow for custom part creation, while Professional and Enterprise plans include more advanced part management and shared libraries across your organization.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h3 class="faq-question">Does CtrlSketch Pro work offline?</h3>
+                    <p class="faq-answer">Yes, the desktop application works offline with local file storage. Cloud synchronization occurs when you reconnect to the internet.</p>
+                </div>
+                
+                <div class="faq-item">
+                    <h3 class="faq-question">Can I export my BOM to other formats?</h3>
+                    <p class="faq-answer">CtrlSketch Pro supports exporting BOMs to CSV, Excel, PDF, and JSON formats, making it easy to integrate with your existing workflows and systems.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <section class="cta-section">
+        <div class="container">
+            <h2 class="cta-title">Ready to Transform Your Technical Diagramming?</h2>
+            <p class="cta-text">Join thousands of engineers, designers, and technical professionals who have upgraded to CtrlSketch Pro.</p>
+            <a href="#" class="gradient-btn">Start Free Trial</a>
+            <p style="margin-top: 1rem; font-size: 0.9rem; color: rgba(245, 245, 247, 0.7);">No credit card required. 14-day free trial.</p>
+        </div>
+    </section>
+    
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-column">
+                    <h4 class="footer-title">CtrlSketch Pro</h4>
+                    <p style="color: rgba(245, 245, 247, 0.7); margin-bottom: 1rem;">Advanced technical diagramming software for professionals.</p>
+                    <div class="social-links">
+                        <a href="#" class="social-link">FB</a>
+                        <a href="#" class="social-link">TW</a>
+                        <a href="#" class="social-link">IG</a>
+                        <a href="#" class="social-link">LI</a>
+                    </div>
+                </div>
+                
+                <div class="footer-column">
+                    <h4 class="footer-title">Products</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">CtrlSketch Pro</a></li>
+                        <li><a href="#">CtrlSketch Lite</a></li>
+                        <li><a href="#">Enterprise Solutions</a></li>
+                        <li><a href="#">API Access</a></li>
+                        <li><a href="#">Partner Program</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-column">
+                    <h4 class="footer-title">Resources</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">Documentation</a></li>
+                        <li><a href="#">Tutorials</a></li>
+                        <li><a href="#">Blog</a></li>
+                        <li><a href="#">Community Forum</a></li>
+                        <li><a href="#">Webinars</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-column">
+                    <h4 class="footer-title">Company</h4>
+                    <ul class="footer-links">
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Careers</a></li>
+                        <li><a href="#">Press Kit</a></li>
+                        <li><a href="#">Contact</a></li>
+                        <li><a href="#">Legal</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p>&copy; 2025 CtrlSketch Pro. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

@@ -89,6 +89,20 @@
               </button>
             </div>
           </div>
+          
+          <!-- Shape Library Section -->
+          <div class="bg-gray-900 rounded-lg p-2 min-w-[150px]">
+            <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Components</h3>
+            <div class="flex gap-1 nowrap">
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-200"
+                @click="$emit('ribbon-action', { type: 'view', value: 'shapeLibrary' })"
+              >
+                <span class="mr-1">📦</span>
+                <span>Shape Library</span>
+              </button>
+            </div>
+          </div>
         </div>
       </template>
       <template v-if="activeTab === 'Insert'">
@@ -97,6 +111,16 @@
           <div class="bg-gray-900 rounded-lg p-2 min-w-[200px]">
             <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Insert</h3>
             <div class="flex gap-1 nowrap">
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'insert', value: 'page' })"
+              >
+                <span class="mr-1 text-indigo-400">📄</span>
+                <span>Page</span>
+                <div class="tooltip">
+                  Add a new page to your document
+                </div>
+              </button>
               <button 
                 class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200"
                 @click="$emit('ribbon-action', { type: 'insert', value: 'layers' })"
@@ -310,6 +334,20 @@
                 <span class="mr-1" :class="showLayers ? 'text-white' : 'text-indigo-400'">📚</span>
                 <span>Layers</span>
               </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200"
+                @click="$emit('ribbon-action', { type: 'view', value: 'pages' })"
+              >
+                <span class="mr-1 text-indigo-400">📄</span>
+                <span>Pages</span>
+              </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200"
+                @click="$emit('ribbon-action', { type: 'view', value: 'shapeLibrary' })"
+              >
+                <span class="mr-1 text-indigo-400">📦</span>
+                <span>Shape Library</span>
+              </button>
             </div>
           </div>
           <!-- Grid Settings Section -->
@@ -343,16 +381,66 @@
       </template>
       <template v-if="activeTab === 'Tools'">
         <div class="flex gap-4 justify-start overflow-x-auto">
-          <!-- Placeholder for Tools Tab -->
-          <div class="bg-gray-900 rounded-lg p-2 min-w-[150px]">
-            <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Tools</h3>
+          <!-- Document Tools -->
+          <div class="bg-gray-900 rounded-lg p-2 min-w-[200px]">
+            <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Document</h3>
             <div class="flex gap-1 nowrap">
               <button 
-                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200"
-                disabled
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'pageManager' })"
               >
-                <span class="mr-1 text-indigo-400">🔧</span>
-                <span>Coming Soon</span>
+                <span class="mr-1 text-indigo-400">📑</span>
+                <span>Page Manager</span>
+                <div class="tooltip">
+                  Manage pages in your document
+                </div>
+              </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'layerManager' })"
+              >
+                <span class="mr-1 text-indigo-400">📚</span>
+                <span>Layer Manager</span>
+                <div class="tooltip">
+                  Manage layers in your document
+                </div>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Utility Tools -->
+          <div class="bg-gray-900 rounded-lg p-2 min-w-[200px]">
+            <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Utilities</h3>
+            <div class="flex gap-1 nowrap">
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'calculator' })"
+              >
+                <span class="mr-1 text-indigo-400">🧮</span>
+                <span>Calculator</span>
+                <div class="tooltip">
+                  Open the calculator tool
+                </div>
+              </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'colorPicker' })"
+              >
+                <span class="mr-1 text-indigo-400">🎨</span>
+                <span>Color Picker</span>
+                <div class="tooltip">
+                  Advanced color selection tool
+                </div>
+              </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'bomGenerator' })"
+              >
+                <span class="mr-1 text-indigo-400">📋</span>
+                <span>BOM Generator</span>
+                <div class="tooltip">
+                  Generate Bill of Materials
+                </div>
               </button>
             </div>
           </div>
@@ -379,6 +467,10 @@ export default {
       default: 0.5
     },
     showLayers: {
+      type: Boolean,
+      default: false
+    },
+    showShapeLibrary: {
       type: Boolean,
       default: false
     }

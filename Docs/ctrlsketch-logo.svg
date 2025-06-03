@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="300"
+   height="80"
+   viewBox="0 0 300 80"
+   version="1.1"
+   id="svg28"
+   sodipodi:docname="ctrlsketch-logo.svg"
+   inkscape:version="0.92.4 (5da689c313, 2019-01-14)">
+  <metadata
+     id="metadata34">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs
+     id="defs32" />
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     id="namedview30"
+     showgrid="false"
+     inkscape:zoom="5.3551553"
+     inkscape:cx="144.16367"
+     inkscape:cy="34.839201"
+     inkscape:window-x="1912"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg28" />
+  <style
+     id="style2">
+    .ctrl-text { fill: #F7A41D; font-family: 'Arial', sans-serif; font-weight: bold; }
+    .sketch-text { fill: #000000; font-family: 'Arial', sans-serif; font-weight: bold; }
+    .pro-text { fill: #E84C88; font-family: 'Arial', sans-serif; font-weight: bold; }
+    
+    @media (prefers-color-scheme: dark) {
+      .sketch-text { fill: #FFFFFF; }
+    }
+  </style>
+  <!-- Background shape for the logo -->
+  <rect
+     x="0"
+     y="0"
+     width="300"
+     height="80"
+     rx="10"
+     fill="#151a21"
+     id="rect4" />
+  <!-- Main Logo Text -->
+  <text
+     x="20"
+     y="53"
+     class="ctrl-text"
+     font-size="40"
+     id="text6">Ctrl</text>
+  <text
+     x="97"
+     y="53"
+     class="sketch-text"
+     font-size="40"
+     id="text8">
+    <tspan
+       style="fill:#f9f9f9"
+       id="tspan36">Sketch</tspan>
+  </text>
+  <text
+     x="230"
+     y="30"
+     class="pro-text"
+     font-size="22"
+     id="text10">Pro</text>
+  <!-- Decorative Elements -->
+  <path
+     d="M226,33 L290,33"
+     stroke="#E84C88"
+     stroke-width="1.5"
+     stroke-opacity="0.4"
+     id="path12" />
+  <path
+     d="M226,38 L270,38"
+     stroke="#E84C88"
+     stroke-width="1.5"
+     stroke-opacity="0.4"
+     id="path14" />
+  <!-- Circuitry Design Elements -->
+  <path
+     d="M20,65 L40,65 L50,75"
+     stroke="#F7A41D"
+     stroke-width="1.5"
+     fill="none"
+     stroke-opacity="0.5"
+     id="path16" />
+  <path
+     d="M240,15 L270,15 L280,25"
+     stroke="#E84C88"
+     stroke-width="1.5"
+     fill="none"
+     stroke-opacity="0.5"
+     id="path18" />
+  <circle
+     cx="50"
+     cy="75"
+     r="2"
+     fill="#F7A41D"
+     fill-opacity="0.7"
+     id="circle20" />
+  <circle
+     cx="280"
+     cy="25"
+     r="2"
+     fill="#E84C88"
+     fill-opacity="0.7"
+     id="circle22" />
+  <!-- Circuit Board Connection lines -->
+  <path
+     d="M5,20 L15,20 L15,60 L5,60"
+     stroke="#3a7bec"
+     stroke-width="1"
+     fill="none"
+     stroke-opacity="0.4"
+     id="path24" />
+  <path
+     d="M285,20 L295,20 L295,60 L285,60"
+     stroke="#3a7bec"
+     stroke-width="1"
+     fill="none"
+     stroke-opacity="0.4"
+     id="path26" />
+</svg>

@@ -1,0 +1,1915 @@
+````vue
+<template>
+  <div ref="wrapper" class="wrapper canvas-workspace" @dblclick="resetZoom">
+    <canvas
+      ref="canvas"
+      class="styled-canvas"
+      :width="canvasWidth"
+      :height="canvasHeight"
+      @wheel.prevent="handleWheel"
+      @mousedown="handleMouseDown"
+      @mousemove="handleMouseMove"
+      @mouseup="handleMouseUp"
+      @click="handleClick"
+      @dblclick="handleDoubleClick"
+      @keydown="handleKeyDown"
+      @dragover.prevent
+      @drop.prevent="handleDrop"
+      tabindex="0"
+    ></canvas>
+  props: {
+  showRulers: Boolean,
+  canvasWidth: Number,
+  canvasHeight: Number,
+  zoomLevel: Number,
+  offsetX: Number,
+  offsetY: Number
+}
+    <div class="status-bar">
+      <div class="status-item"><strong>Zoom:</strong> {{ Math.round(zoom * 100) }}%</div>
+      <div class="status-item"><strong>X:</strong> {{ Math.round(cursorX) }}</div>
+      <div class="status-item"><strong>Y:</strong> {{ Math.round(cursorY) }}</div>
+      <div class="status-item"><strong>Selected:</strong> {{ localSelectedShapes.length }}</div>
+      <div class="status-item" :class="{ 'status-active': snapToGrid }">
+        <strong>Snap to Grid:</strong> {{ snapToGrid ? 'ON' : 'OFF' }}
+      </div>
+      
+      <!-- Auto-save status - only show if we're actually saving -->
+      <div v-if="autoSaveStatus && autoSaveMessage" class="status-item auto-save-status" :class="{
+        'status-saving': autoSaveStatus === 'saving',
+        'status-saved': autoSaveStatus === 'saved',
+        'status-error': autoSaveStatus === 'error'
+      }">
+        <svg v-if="autoSaveStatus === 'saving'" class="animate-spin -ml-1 mr-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <svg v-else-if="autoSaveStatus === 'saved'" class="mr-1 h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <svg v-else-if="autoSaveStatus === 'error'" class="mr-1 h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        <span>{{ autoSaveMessage }}</span>
+      </div>
+      
+      <div class="flex-grow"></div>
+      <button 
+        @click="toggleDebugOverlay" 
+        class="debug-button" 
+        :class="{ 'debug-active': showDebugOverlay }"
+      >
+        {{ showDebugOverlay ? 'Hide Debug' : 'Debug' }}
+      </button>
+    </div>
+  </div>
+</template>
+
+<script>
+import Rulers from './Rulers.vue'
+
+export default {
+  name: "CanvasZoomGrid",
+  components: { Rulers },
+ props: {
+  tool: String,
+  styles: Object,
+  gridSize: Number,
+  gridOpacity: Number,
+  showRulers: Boolean,
+  snapToGrid: Boolean,
+  shapes: {
+    type: Array,
+    default: () => []
+  },
+  selectedShapes: {
+    type: Array,
+    default: () => []
+  },
+  activeLayer: {
+    type: Object,
+    default: () => ({ name: 'Default', visible: true, frozen: false })
+  },
+  visibleLayers: {
+    type: Array,
+    default: () => []
+  },
+  autoSaveStatus: {
+    type: String,
+    default: null
+  },
+  autoSaveMessage: {
+    type: String,
+    default: ''
+  }
+},
+  data() {
+    return {
+      ctx: null,
+      zoom: 1,
+      zoomTarget: 1,
+      offsetX: 0,
+      offsetY: 0,
+      panTargetX: 0,
+      panTargetY: 0,
+      // Standard 17x11 inches at 96 DPI
+      canvasWidth: 1632, // 17 inches * 96 DPI
+      canvasHeight: 1056, // 11 inches * 96 DPI
+      isDrawing: false,
+      isDragging: false,
+      isResizing: false,
+      isRotating: false,
+      startX: 0,
+      startY: 0,
+      currentShape: null,
+      resizeHandle: null,
+      selectionStart: null,
+      lastGridSize: 0,
+      lastGridOpacity: 0,
+      lastZoom: 1,
+      cursorX: 0,
+      cursorY: 0,
+      clipboard: [],
+      localSelectedShapes: [],
+      _renderRequested: false,
+      imageCache: new Map(), // Cache images by shape ID
+      localTool: 'select', // Local copy of the tool prop
+      
+      // Canvas caching
+      staticCanvas: null,
+      staticCtx: null,
+      staticCanvasDirty: true,
+      lastCanvasWidth: 0,
+      lastCanvasHeight: 0,
+      animationFrameId: null,
+      
+      // Shape caching
+      shapeCache: new Map(), // Cache rendered shapes by ID + timestamp
+      shapeCacheEnabled: true,
+      shapeCacheMaxAge: 5000, // 5 seconds
+      
+      // Performance metrics
+      performanceMetrics: {
+        lastRenderTime: 0,
+        averageRenderTime: 0,
+        renderCount: 0,
+        shapesRendered: 0,
+        shapesSkipped: 0,
+        shapesCached: 0,
+        slowRenders: 0,
+        peakRenderTime: 0
+      },
+      showDebugOverlay: false,
+      debugInfo: {
+        position: { x: 0, y: 0 }, // Will be centered when debug overlay is shown
+        size: { width: 400, height: 400 },
+        isDragging: false,
+        dragStart: { x: 0, y: 0 }
+      }
+    };
+  },
+  watch: {
+    selectedShapes: {
+      immediate: true,
+      handler(newVal) {
+        console.log('selectedShapes prop changed:', newVal.length);
+        this.localSelectedShapes = [...newVal];
+        this.render();
+      }
+    },
+    shapes: {
+      immediate: true,
+      handler(newVal, oldVal) {
+        console.log('Shapes prop changed, updating canvas:', newVal.length);
+        
+        try {
+          // Process all shapes
+          newVal.forEach(shape => {
+            // Make sure all shapes have required properties
+            if (!shape.id) {
+              console.warn('Shape missing ID:', shape);
+              shape.id = 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            // Special handling for image shapes
+            if (shape.type === 'image') {
+              console.log('Image shape:', { 
+                id: shape.id, 
+                layerId: shape.layerId, 
+                src: shape.src, 
+                imageExists: !!shape.image 
+              });
+              
+              // If the shape has a src but no image, try to load it
+              if (shape.src && !shape.image && !shape.isLoading) {
+                console.log('Loading image for shape:', shape.id);
+                this.reloadImage(shape, false);
+              }
+            }
+          });
+          
+          // If we have old values, do additional processing
+          if (oldVal) {
+            // Process all shapes, not just images
+            newVal.forEach((shape) => {
+              const oldShape = oldVal.find(s => s.id === shape.id);
+              if (!oldShape) return; // Skip new shapes
+              
+              // For all shapes, ensure _layerOpacity is not set
+              // This will force the renderer to use the layer's opacity
+              if (shape._layerOpacity !== undefined) {
+                delete shape._layerOpacity;
+              }
+              
+              // Special handling for images
+              if (shape.type === 'image') {
+                // Always preserve the image object when the shape exists in both old and new arrays
+                if (oldShape.image) {
+                  console.log('Preserving image for shape:', { id: shape.id, oldLayer: oldShape.layerId, newLayer: shape.layerId });
+                  shape.image = oldShape.image;
+                }
+                
+                // If layer changed and no image, reload it
+                if (oldShape.layerId !== shape.layerId && !oldShape.image) {
+                  console.log('Layer changed for image without image object:', { id: shape.id, oldLayer: oldShape.layerId, newLayer: shape.layerId });
+                  this.reloadImage(shape, false);
+                }
+              }
+            });
+          }
+          
+          // Render the updated shapes
+          this.render();
+        } catch (error) {
+          console.error('Error processing shapes:', error);
+        }
+      }
+    },
+    visibleLayers: {
+      immediate: true,
+      handler(newVal) {
+        console.log('visibleLayers changed:', newVal.map(l => ({ id: l.id, visible: l.visible })));
+        this.render();
+      }
+    },
+    tool: {
+      immediate: true,
+      handler(newVal) {
+        console.log('Tool prop changed to:', newVal);
+        this.localTool = newVal;
+      }
+    },
+    gridSize() {
+      this.staticCanvasDirty = true;
+      this.render();
+    },
+    gridOpacity() {
+      this.staticCanvasDirty = true;
+      this.render();
+    },
+    zoom() {
+      this.staticCanvasDirty = true;
+    },
+    offsetX() {
+      this.staticCanvasDirty = true;
+    },
+    offsetY() {
+      this.staticCanvasDirty = true;
+    }
+  },
+  mounted() {
+    try {
+      console.log('CanvasWorkspace mounted');
+      
+      // Verify canvas size
+      console.log('Canvas size in data:', this.canvasWidth, 'x', this.canvasHeight, '(17x11 inches at 96 DPI)');
+      
+      // Use nextTick to ensure the DOM is fully rendered before accessing the canvas
+      this.$nextTick(() => {
+        // Try to initialize the canvas
+        if (!this.initializeCanvas()) {
+          console.warn('Initial canvas initialization failed, will retry');
+          
+          // If initialization fails, try again after a short delay
+          setTimeout(() => {
+            console.log('Retrying canvas initialization...');
+            if (!this.initializeCanvas()) {
+              console.error('Canvas initialization failed after retry');
+              
+              // Try one more time with a longer delay
+              setTimeout(() => {
+                console.log('Final retry for canvas initialization...');
+                if (!this.initializeCanvas()) {
+                  console.error('Canvas initialization failed after final retry');
+                } else {
+                  console.log('Canvas initialization successful on final retry');
+                  this.render(); // Force a render after successful initialization
+                }
+              }, 500);
+            } else {
+              console.log('Canvas initialization successful on retry');
+              this.render(); // Force a render after successful initialization
+            }
+          }, 100);
+        } else {
+          console.log('Canvas initialization successful on first try');
+        }
+        
+        // Verify canvas size after initialization
+        const canvas = this.$refs.canvas;
+        if (canvas) {
+          console.log('Actual canvas element size:', canvas.width, 'x', canvas.height);
+          console.log('Canvas style dimensions:', canvas.style.width, canvas.style.height);
+          console.log('Canvas client dimensions:', canvas.clientWidth, 'x', canvas.clientHeight);
+        }
+      });
+      
+      // Set up event listeners
+      window.addEventListener("resize", this.centerCanvas);
+      document.addEventListener("keydown", this.handleKeyDown);
+      
+      // Add a global mouse up handler to fix any stuck mouse states
+      this.globalMouseUpHandler = (e) => {
+        // Force release of all mouse states
+        this.isDragging = false;
+        this.isResizing = false;
+        this.isRotating = false;
+        this.isDrawing = false;
+        document.body.style.cursor = 'default';
+        this.render();
+      };
+      document.addEventListener("mouseup", this.globalMouseUpHandler);
+      
+      // Start animation loop
+      this.animate();
+    } catch (error) {
+      console.error('Error initializing canvas:', error);
+    }
+  },
+  
+  updated() {
+    // Re-initialize canvas if it's not available
+    if (!this.ctx) {
+      console.log('Canvas context not available in updated hook, reinitializing');
+      this.$nextTick(() => {
+        if (!this.initializeCanvas()) {
+          console.warn('Canvas initialization failed in updated hook, will retry');
+          setTimeout(() => {
+            console.log('Retrying canvas initialization in updated hook...');
+            this.initializeCanvas();
+          }, 100);
+        } else {
+          console.log('Canvas initialization successful in updated hook');
+          this.render(); // Force a render after successful initialization
+        }
+      });
+    }
+  },
+  
+  methods: {
+    /**
+     * Initialize the canvas and context
+     */
+    initializeCanvas() {
+      console.log('Initializing canvas');
+      const canvas = this.$refs.canvas;
+      if (!canvas) {
+        console.error('Canvas element not found');
+        return false;
+      }
+      
+      // Explicitly set canvas dimensions to ensure they match our data properties
+      canvas.width = this.canvasWidth;
+      canvas.height = this.canvasHeight;
+      console.log('Canvas dimensions set to:', canvas.width, 'x', canvas.height, '(17x11 inches at 96 DPI)');
+      
+      // Get the 2D context
+      this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!this.ctx) {
+        console.error('Failed to get 2D context');
+        return false;
+      }
+      
+      console.log('Canvas context initialized successfully');
+      
+      // Initialize static canvas for caching background and grid
+      this.staticCanvas = document.createElement('canvas');
+      this.staticCanvas.width = this.canvasWidth;
+      this.staticCanvas.height = this.canvasHeight;
+      this.staticCtx = this.staticCanvas.getContext('2d', { willReadFrequently: true });
+      
+      // Set focus and center the canvas
+      canvas.focus();
+      canvas.addEventListener("keydown", this.handleKeyDown, true);
+      canvas.addEventListener("click", () => {
+        canvas.focus();
+      });
+      
+      // We don't want to make the entire canvas draggable
+      // Instead, we'll handle dragging of shapes in the handleMouseDown method
+      
+      // Center the canvas with a slight delay to ensure proper sizing
+      setTimeout(() => {
+        this.centerCanvas('reset');
+      }, 100);
+      
+      // Force an initial render
+      this.$nextTick(() => {
+        this.render();
+      });
+      
+      return true;
+    },
+  
+    beforeUnmount() {
+      window.removeEventListener("resize", this.centerCanvas);
+      document.removeEventListener("keydown", this.handleKeyDown);
+      document.removeEventListener("mouseup", this.globalMouseUpHandler);
+      const canvas = this.$refs.canvas;
+      if (canvas) {
+        canvas.removeEventListener("keydown", this.handleKeyDown, true);
+      }
+      
+      // Cancel any pending animation frames
+      if (this.animationFrameId) {
+        cancelAnimationFrame(this.animationFrameId);
+      }
+      
+      // Clean up static canvas
+      this.staticCanvas = null;
+      this.staticCtx = null;
+      
+      // Clean up shape cache
+      this.shapeCache.clear();
+    },
+    /**
+     * Handle drop events from the Shape Library
+     */
+    handleDrop(event) {
+      console.log('Canvas received drop event');
+      
+      // Make sure we're in select mode - use localTool and emit an event
+      this.localTool = 'select';
+      this.$emit('update:tool', 'select');
+      
+      // Reset any stuck mouse states
+      this.isDragging = false;
+      this.isResizing = false;
+      this.isRotating = false;
+      this.isDrawing = false;
+      
+      // Get the drop position in canvas coordinates
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      const x = (event.clientX - rect.left - centerX) / this.zoom;
+      const y = (event.clientY - rect.top - centerY) / this.zoom;
+      
+      // Add drop position to the event
+      event.canvasX = x;
+      event.canvasY = y;
+      
+      // Emit the drop event to the parent component
+      this.$emit('drop', event);
+      
+      // Force a render to update the display
+      this.render();
+    },
+    
+    /**
+     * Start dragging a shape to the library
+     * This is triggered when Alt+Click on a shape
+     */
+    startShapeDrag(e) {
+      if (this.localSelectedShapes.length === 0) return;
+      
+      const shape = this.localSelectedShapes[0]; // Use the first selected shape
+      console.log('Starting shape drag to library:', shape);
+      
+      // Create a temporary draggable element
+      const dragProxy = document.createElement('div');
+      dragProxy.style.position = 'absolute';
+      dragProxy.style.top = e.clientY + 'px';
+      dragProxy.style.left = e.clientX + 'px';
+      dragProxy.style.width = '10px';
+      dragProxy.style.height = '10px';
+      dragProxy.style.opacity = '0';
+      dragProxy.setAttribute('draggable', 'true');
+      
+      // Add event listeners
+      dragProxy.addEventListener('dragstart', (dragEvent) => {
+        console.log('Drag start from shape:', shape);
+        
+        // Set the drag data
+        const dragData = {
+          type: 'canvas-shape',
+          shape: {
+            ...shape,
+            // Remove any circular references or complex objects
+            image: null
+          }
+        };
+        
+        try {
+          // Set the drag data as JSON
+          dragEvent.dataTransfer.setData('application/json', JSON.stringify(dragData));
+          
+          // Set a drag image
+          const dragImage = document.createElement('div');
+          dragImage.textContent = shape.type;
+          dragImage.style.padding = '10px';
+          dragImage.style.background = '#3B82F6';
+          dragImage.style.color = 'white';
+          dragImage.style.borderRadius = '4px';
+          dragImage.style.position = 'absolute';
+          dragImage.style.top = '-1000px';
+          document.body.appendChild(dragImage);
+          
+          dragEvent.dataTransfer.setDragImage(dragImage, 25, 25);
+          
+          // Clean up the drag image after a short delay
+          setTimeout(() => {
+            document.body.removeChild(dragImage);
+          }, 100);
+          
+          // Set the allowed effects
+          dragEvent.dataTransfer.effectAllowed = 'copy';
+        } catch (error) {
+          console.error('Error setting drag data:', error);
+        }
+      });
+      
+      // Add to document, trigger drag, then remove
+      document.body.appendChild(dragProxy);
+      
+      // Clean up after drag ends
+      dragProxy.addEventListener('dragend', () => {
+        document.body.removeChild(dragProxy);
+      });
+      
+      // Trigger the drag programmatically
+      setTimeout(() => {
+        const dragEvent = new DragEvent('dragstart', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: new DataTransfer()
+        });
+        dragProxy.dispatchEvent(dragEvent);
+      }, 10);
+    },
+    
+    /**
+     * Handle drag start for shapes on the canvas
+     */
+    handleDragStart(event) {
+      if (!this._dragShapeData) return;
+      
+      const { shape, multiple } = this._dragShapeData;
+      
+      // Set the drag data
+      const dragData = {
+        type: 'canvas-shape',
+        shape: shape,
+        shapes: multiple ? this.localSelectedShapes : [shape]
+      };
+      
+      event.dataTransfer.setData('application/json', JSON.stringify(dragData));
+      
+      // Set a custom drag image
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      
+      // Draw a background
+      ctx.fillStyle = '#1F2937';
+      ctx.fillRect(0, 0, 100, 100);
+      
+      // Draw a simple representation of the shape
+      ctx.fillStyle = shape.fill || '#3B82F6';
+      ctx.strokeStyle = shape.stroke || '#000000';
+      ctx.lineWidth = 2;
+      
+      if (shape.type === 'rectangle') {
+        ctx.fillRect(20, 20, 60, 60);
+        ctx.strokeRect(20, 20, 60, 60);
+      } else if (shape.type === 'circle') {
+        ctx.beginPath();
+        ctx.arc(50, 50, 30, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        // Generic shape representation
+        ctx.beginPath();
+        ctx.moveTo(20, 50);
+        ctx.lineTo(50, 20);
+        ctx.lineTo(80, 50);
+        ctx.lineTo(50, 80);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      
+      // Add text if multiple shapes
+      if (multiple) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.localSelectedShapes.length.toString(), 50, 50);
+      }
+      
+      // Set the drag image
+      event.dataTransfer.setDragImage(canvas, 50, 50);
+    },
+    
+    /**
+     * Handle drag end for shapes on the canvas
+     */
+    handleDragEnd(event) {
+      // Clean up
+      this.$refs.canvas.removeAttribute('draggable');
+      this.$refs.canvas.removeEventListener('dragstart', this.handleDragStart);
+      this.$refs.canvas.removeEventListener('dragend', this.handleDragEnd);
+      this._dragShapeData = null;
+    },
+    
+    /**
+     * Loads or reloads an image for a shape with improved error handling
+     * @param {Object} shape - The shape object containing image data
+     * @param {boolean} [showErrorNotification=true] - Whether to show error notifications to the user
+     */
+    reloadImage(shape, showErrorNotification = true) {
+      if (!shape.src) {
+        console.error('No source for image shape:', shape);
+        if (showErrorNotification) {
+          this.$emit('show-notification', {
+            type: 'error',
+            message: 'Image loading failed: Missing source URL',
+            details: `Shape ID: ${shape.id}`,
+            duration: 5000
+          });
+        }
+        
+        // Mark the shape as having an error
+        const updatedShapes = this.shapes.map(s => 
+          s.id === shape.id ? { ...s, imageError: 'missing-source' } : s
+        );
+        this.$emit('shape-updated', updatedShapes);
+        return;
+      }
+      
+      // First check if we already have this image in the cache
+      if (this.imageCache.has(shape.id)) {
+        console.log('Using cached image for shape:', shape.id);
+        shape.image = this.imageCache.get(shape.id);
+        
+        // Update the shape in the shapes array and clear any previous errors
+        const updatedShapes = this.shapes.map(s => 
+          s.id === shape.id ? { ...s, image: shape.image, imageError: null } : s
+        );
+        this.$emit('shape-updated', updatedShapes);
+        this.render();
+        return;
+      }
+      
+      // If not in cache, load the image
+      console.log('Loading image for shape:', { id: shape.id, src: shape.src });
+      
+      // Update shape to show loading state
+      const loadingShapes = this.shapes.map(s => 
+        s.id === shape.id ? { ...s, isLoading: true, imageError: null } : s
+      );
+      this.$emit('shape-updated', loadingShapes);
+      
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      let retries = 3;
+      let timeoutId = null;
+      
+      // Set a timeout to detect stalled image loads
+      const setLoadTimeout = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          console.warn('Image load timeout for shape:', shape.id);
+          if (retries > 0) {
+            retryLoad();
+          } else {
+            handleMaxRetriesReached('timeout');
+          }
+        }, 10000); // 10 second timeout
+      };
+      
+      const retryLoad = () => {
+        retries--;
+        console.log(`Retrying image load (${retries} left):`, shape.id);
+        
+        // Show retry notification
+        if (showErrorNotification) {
+          this.$emit('show-notification', {
+            type: 'warning',
+            message: `Retrying image load (${retries} attempts left)`,
+            details: shape.src.substring(0, 50) + (shape.src.length > 50 ? '...' : ''),
+            duration: 3000
+          });
+        }
+        
+        setTimeout(() => {
+          setLoadTimeout();
+          img.src = shape.src + (shape.src.includes('?') ? '&' : '?') + 'retry=' + Date.now();
+        }, 800);
+      };
+      
+      const handleMaxRetriesReached = (reason) => {
+        clearTimeout(timeoutId);
+        console.error(`Max retries reached for image (${reason}):`, shape.id);
+        
+        // Update shape to show error state
+        const errorShapes = this.shapes.map(s => 
+          s.id === shape.id ? { ...s, isLoading: false, imageError: reason } : s
+        );
+        this.$emit('shape-updated', errorShapes);
+        
+        if (showErrorNotification) {
+          this.$emit('show-notification', {
+            type: 'error',
+            message: 'Failed to load image after multiple attempts',
+            details: 'The image might be unavailable or the URL might be incorrect',
+            duration: 7000,
+            actions: [
+              {
+                label: 'Retry',
+                callback: () => this.reloadImage(shape, true)
+              },
+              {
+                label: 'Edit URL',
+                callback: () => {
+                  const newUrl = prompt('Enter new image URL:', shape.src);
+                  if (newUrl && newUrl !== shape.src) {
+                    const updatedShapes = this.shapes.map(s => 
+                      s.id === shape.id ? { ...s, src: newUrl, imageError: null } : s
+                    );
+                    this.$emit('shape-updated', updatedShapes);
+                    this.reloadImage({...shape, src: newUrl}, true);
+                  }
+                }
+              }
+            ]
+          });
+        }
+        
+        this.render();
+      };
+      
+      const loadImage = () => {
+        setLoadTimeout();
+        
+        img.onload = () => {
+          clearTimeout(timeoutId);
+          console.log('PNG image loaded successfully:', shape.id);
+          this.imageCache.set(shape.id, img);
+          
+          // Update the shape in the shapes array
+          const updatedShapes = this.shapes.map(s => 
+            s.id === shape.id ? { ...s, image: img, isLoading: false, imageError: null } : s
+          );
+          this.$emit('shape-updated', updatedShapes);
+          this.render();
+        };
+        
+        img.onerror = (err) => {
+          clearTimeout(timeoutId);
+          console.error('Failed to load PNG image:', err, shape);
+          
+          if (retries > 0) {
+            retryLoad();
+          } else {
+            handleMaxRetriesReached('error');
+          }
+        };
+        
+        // Set the source last to trigger loading
+        img.src = shape.src;
+      };
+      
+      loadImage();
+    },
+    centerCanvas() {
+      const wrapper = this.$refs.wrapper;
+      if (!wrapper) return;
+      if (arguments[0] === 'reset') {
+        this.zoomTarget = 1;
+      }
+      this.panTargetX = 0;
+      this.panTargetY = 0;
+    },
+    handleWheel(e) {
+      if (e.ctrlKey) {
+        const rect = this.$refs.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+        const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+        const mouseCanvasX = (mouseX - centerX) / this.zoom;
+        const mouseCanvasY = (mouseY - centerY) / this.zoom;
+        const delta = e.deltaY * -0.001;
+        const newZoom = Math.min(Math.max(this.zoom + delta, 0.3), 4);
+        const zoomRatio = newZoom / this.zoom;
+        const offsetChangeX = mouseX - (mouseX - centerX) * zoomRatio - centerX;
+        const offsetChangeY = mouseY - (mouseY - centerY) * zoomRatio - centerY;
+        this.panTargetX += offsetChangeX * 0.5;
+        this.panTargetY += offsetChangeY * 0.5;
+        this.zoomTarget = newZoom;
+      } else if (e.shiftKey) {
+        this.panTargetX += e.deltaY * 0.5;
+      } else {
+        this.panTargetY += e.deltaY * 0.5;
+      }
+      e.preventDefault();
+    },
+    resetZoom() {
+      this.centerCanvas('reset');
+    },
+    /**
+     * Draws a placeholder for an image based on its state
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     * @param {Object} shape - The image shape
+     * @param {string} state - The state of the image ('empty', 'loading', 'error')
+     */
+    drawImagePlaceholder(ctx, shape, state) {
+      // Base placeholder
+      ctx.fillStyle = state === 'error' ? '#FEE2E2' : '#E5E7EB';
+      ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
+      
+      // Border
+      ctx.strokeStyle = state === 'error' ? '#EF4444' : 
+                        state === 'loading' ? '#3B82F6' : '#9CA3AF';
+      ctx.lineWidth = 2 / this.zoom;
+      ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+      
+      // Draw image icon
+      const centerX = shape.x + shape.width / 2;
+      const centerY = shape.y + shape.height / 2;
+      const iconSize = Math.min(40, Math.min(shape.width, shape.height) / 2) / this.zoom;
+      
+      ctx.strokeStyle = state === 'error' ? '#DC2626' : 
+                        state === 'loading' ? '#2563EB' : '#6B7280';
+      ctx.fillStyle = state === 'error' ? '#FCA5A5' : 
+                      state === 'loading' ? '#BFDBFE' : '#D1D5DB';
+      
+      // Draw image frame icon
+      ctx.beginPath();
+      ctx.rect(centerX - iconSize / 2, centerY - iconSize / 2, iconSize, iconSize);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Draw sun/mountain inside frame
+      ctx.beginPath();
+      ctx.arc(centerX - iconSize / 4, centerY - iconSize / 4, iconSize / 8, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw mountain
+      ctx.beginPath();
+      ctx.moveTo(centerX - iconSize / 3, centerY + iconSize / 3);
+      ctx.lineTo(centerX, centerY - iconSize / 6);
+      ctx.lineTo(centerX + iconSize / 3, centerY + iconSize / 3);
+      ctx.closePath();
+      ctx.fill();
+    },
+    snapCoordinate(coord) {
+      if (this.snapToGrid && this.gridSize) {
+        return Math.round(coord / this.gridSize) * this.gridSize;
+      }
+      return coord;
+    },
+    handleMouseDown(e) {
+      console.log('MOUSE DOWN');
+      this.$refs.canvas.focus();
+      
+      // Get canvas-relative coordinates
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      // Store the start position for dragging
+      this.startX = x;
+      this.startY = y;
+      
+      // Get snapped coordinates
+      const snappedX = this.snapCoordinate(x);
+      const snappedY = this.snapCoordinate(y);
+      
+      console.log('Mouse down at:', x, y, 'Snapped:', snappedX, snappedY);
+      
+      // Check if we're in a drawing tool mode
+      if (this.localTool && this.localTool !== 'select') {
+        // Start drawing a new shape
+        this.isDrawing = true;
+        this.currentShape = {
+          id: Date.now(),
+          type: this.localTool,
+          x: snappedX,
+          y: snappedY,
+          width: 0,
+          height: 0,
+          text: this.localTool === 'text' ? 'Text' : '',
+          points: this.localTool === 'pen' ? [[snappedX, snappedY]] : null,
+          rotation: 0,
+          lineStyle: 'solid',
+          ...(this.localTool === 'text' ? {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: 20,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textDecoration: 'none',
+            textAlign: 'left',
+            fill: '#000000',
+            stroke: '#00000000'
+          } : {}),
+          ...this.styles,
+          layerId: this.activeLayer ? this.activeLayer.id : undefined
+        };
+        console.log('Started drawing:', this.localTool);
+        return;
+      }
+      
+      // Check if we're clicking on a resize handle
+      if (this.localSelectedShapes.length > 0) {
+        const handle = this.getHandleAt(x, y);
+        if (handle) {
+          console.log('Handle found:', handle.type, handle.corner);
+          if (handle.type === 'resize' && !this.activeLayer.frozen) {
+            this.isResizing = true;
+            this.resizeHandle = handle;
+            return;
+          } else if (handle.type === 'rotate' && !this.activeLayer.frozen) {
+            this.isRotating = true;
+            return;
+          }
+        }
+      }
+      
+      // Check if we're clicking on a shape
+      const shape = this.getShapeAt(x, y);
+      console.log('Shape found:', shape ? shape.type : 'none');
+      
+      if (shape) {
+        const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+        if (shapeLayer && !shapeLayer.frozen) {
+          // Handle selection logic
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            // Multi-select with modifier key
+            const shapeIndex = this.localSelectedShapes.findIndex(s => s.id === shape.id);
+            if (shapeIndex !== -1) {
+              // Remove from selection if already selected
+              console.log('Shape removed from selection:', shape.type);
+              this.localSelectedShapes.splice(shapeIndex, 1);
+            } else {
+              // Add to selection
+              this.localSelectedShapes.push(shape);
+              console.log('Shape added to selection:', shape.type);
+            }
+          } else {
+            // Single select without modifier key
+            this.localSelectedShapes = [shape];
+            console.log('Shape selected:', shape.type);
+          }
+          
+          // Emit the updated selection
+          this.$emit('shapes-selected', [...this.localSelectedShapes]);
+          
+          // Start dragging the shape
+          this.isDragging = true;
+          console.log('DRAG FLAG SET TO TRUE');
+          
+          // Store the selected shape for potential drag operations
+          this.dragShape = shape;
+          
+          // Create a global event handler for Alt key + mouse move to initiate drag
+          this.altDragHandler = (moveEvent) => {
+            if (moveEvent.altKey && this.isDragging && this.dragShape) {
+              // Create a temporary draggable element
+              const dragProxy = document.createElement('div');
+              dragProxy.style.position = 'absolute';
+              dragProxy.style.top = moveEvent.clientY + 'px';
+              dragProxy.style.left = moveEvent.clientX + 'px';
+              dragProxy.style.width = '10px';
+              dragProxy.style.height = '10px';
+              dragProxy.style.opacity = '0';
+              dragProxy.setAttribute('draggable', 'true');
+              
+              // Add event listeners
+              dragProxy.addEventListener('dragstart', (dragEvent) => {
+                console.log('Drag start from shape:', this.dragShape);
+                
+                // Set the drag data
+                const dragData = {
+                  type: 'canvas-shape',
+                  shape: {
+                    ...this.dragShape,
+                    // Remove any circular references or complex objects
+                    image: null
+                  }
+                };
+                
+                // Set the drag data as JSON
+                dragEvent.dataTransfer.setData('application/json', JSON.stringify(dragData));
+                
+                // Set a drag image
+                const dragImage = document.createElement('div');
+                dragImage.textContent = this.dragShape.type;
+                dragImage.style.padding = '10px';
+                dragImage.style.background = '#3B82F6';
+                dragImage.style.color = 'white';
+                dragImage.style.borderRadius = '4px';
+                dragImage.style.position = 'absolute';
+                dragImage.style.top = '-1000px';
+                document.body.appendChild(dragImage);
+                
+                dragEvent.dataTransfer.setDragImage(dragImage, 25, 25);
+                
+                // Clean up the drag image after a short delay
+                setTimeout(() => {
+                  document.body.removeChild(dragImage);
+                }, 100);
+                
+                // Set the allowed effects
+                dragEvent.dataTransfer.effectAllowed = 'copy';
+              });
+              
+              // Add to document, trigger drag, then remove
+              document.body.appendChild(dragProxy);
+              
+              // Clean up after drag ends
+              dragProxy.addEventListener('dragend', () => {
+                document.body.removeChild(dragProxy);
+                // Remove the event listener
+                document.removeEventListener('mousemove', this.altDragHandler);
+                this.altDragHandler = null;
+              });
+              
+              // Trigger the drag programmatically
+              setTimeout(() => {
+                dragProxy.dispatchEvent(new DragEvent('dragstart', {
+                  bubbles: true,
+                  cancelable: true,
+                  dataTransfer: new DataTransfer()
+                }));
+              }, 10);
+            }
+            this.render();
+          };
+          
+          // Add the event listener
+          document.addEventListener('mousemove', this.altDragHandler);
+          return;
+        }
+      }
+      
+      // Clicked on empty space - clear selection unless shift is held
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        if (this.localSelectedShapes.length > 0) {
+          this.localSelectedShapes = [];
+          this.$emit('shapes-selected', []);
+          console.log('Selection cleared');
+        }
+      }
+      
+      this.selectionStart = { x, y };
+      this.currentShape = {
+        type: 'selection',
+        x: x,
+        y: y,
+        width: 0,
+        height: 0
+      };
+      console.log('Started selection rectangle with shift:', e.shiftKey);
+    },
+    handleMouseMove(e) {
+      // Get canvas-relative coordinates
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      
+      // Convert to world coordinates
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      // Update cursor position
+      this.cursorX = x;
+      this.cursorY = y;
+      
+      // Get snapped coordinates
+      const snappedX = this.snapCoordinate(x);
+      const snappedY = this.snapCoordinate(y);
+      
+      // Handle drawing mode
+      if (this.isDrawing && this.currentShape) {
+        if (this.localTool === 'pen') {
+          // For pen tool, add points as we move
+          const lastPoint = this.currentShape.points[this.currentShape.points.length - 1];
+          const distance = Math.sqrt(
+            Math.pow(snappedX - lastPoint[0], 2) + 
+            Math.pow(snappedY - lastPoint[1], 2)
+          );
+          if (distance > 2) {
+            this.currentShape.points.push([snappedX, snappedY]);
+          }
+        } else {
+          // For other shapes, update width and height
+          this.currentShape.width = snappedX - this.currentShape.x;
+          this.currentShape.height = snappedY - this.currentShape.y;
+        }
+        this.render();
+        return;
+      }
+      
+      // Handle shape dragging
+      if (this.isDragging && this.localSelectedShapes.length > 0) {
+        console.log('DRAGGING SHAPES', this.localSelectedShapes.length);
+        
+        // Calculate the movement delta
+        const dx = snappedX - this.startX;
+        const dy = snappedY - this.startY;
+        
+        if (dx !== 0 || dy !== 0) {
+          console.log(`Moving shapes by dx=${dx}, dy=${dy}`);
+          
+          // Update the positions of all selected shapes
+          this.localSelectedShapes.forEach(shape => {
+            const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+            if (!shapeLayer || !shapeLayer.frozen) {
+              shape.x += dx;
+              shape.y += dy;
+              console.log(`Shape ${shape.id} moved to (${shape.x}, ${shape.y})`);
+            }
+          });
+          
+          // Update the start position for the next move
+          this.startX = snappedX;
+          this.startY = snappedY;
+          
+          // Create an updated shapes array with the moved shapes
+          const updatedShapes = this.shapes.map(s => {
+            const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
+            return movedShape || s;
+          });
+          
+          // Emit the shape update event
+          this.$emit('shape-updated', updatedShapes);
+          
+          // Force a render to show the shapes in their new positions
+          this.render();
+        }
+        return;
+      } else if (this.isResizing && this.localSelectedShapes.length > 0 && this.resizeHandle && !this.activeLayer.frozen) {
+        const shape = this.localSelectedShapes[0];
+        const corner = this.resizeHandle.corner;
+        if (corner === 'bottom-right') {
+          shape.width = Math.max(10, snappedX - shape.x);
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'top-left') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.y = shape.y + shape.height - newHeight;
+          shape.width = newWidth;
+          shape.height = newHeight;
+        } else if (corner === 'top-right') {
+          shape.width = Math.max(10, snappedX - shape.x);
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.y = shape.y + shape.height - newHeight;
+          shape.height = newHeight;
+        } else if (corner === 'bottom-left') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.width = newWidth;
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'top-middle') {
+          const newHeight = Math.max(10, shape.y + shape.height - snappedY);
+          shape.y = shape.y + shape.height - newHeight;
+          shape.height = newHeight;
+        } else if (corner === 'bottom-middle') {
+          shape.height = Math.max(10, snappedY - shape.y);
+        } else if (corner === 'left-middle') {
+          const newWidth = Math.max(10, shape.x + shape.width - snappedX);
+          shape.x = shape.x + shape.width - newWidth;
+          shape.width = newWidth;
+        } else if (corner === 'right-middle') {
+          shape.width = Math.max(10, snappedX - shape.x);
+        }
+        const updatedShapes = this.shapes.map(s => s.id === shape.id ? { ...s, x: shape.x, y: shape.y, width: shape.width, height: shape.height } : s);
+        this.$emit('shape-updated', updatedShapes);
+      } else if (this.isRotating && this.localSelectedShapes.length > 0 && !this.activeLayer.frozen) {
+        const shape = this.localSelectedShapes[0];
+        const centerX = shape.x + shape.width / 2;
+        const centerY = shape.y + shape.height / 2;
+        shape.rotation = Math.atan2(y - centerY, x - centerX) + Math.PI / 2;
+        const updatedShapes = this.shapes.map(s => s.id === shape.id ? { ...s, rotation: shape.rotation } : s);
+        this.$emit('shape-updated', updatedShapes);
+      } else if (this.selectionStart) {
+        this.currentShape = {
+          type: 'selection',
+          x: Math.min(this.startX, x),
+          y: Math.min(this.startY, y),
+          width: Math.abs(x - this.startX),
+          height: Math.abs(y - this.startY)
+        };
+        console.log('Selection rectangle:', this.currentShape);
+      }
+      this.render();
+    },
+    handleMouseUp(e) {
+      console.log('MOUSE UP');
+      
+      // Force release of all mouse states
+      document.body.style.cursor = 'default';
+      
+      // Handle drawing completion
+      if (this.isDrawing && this.currentShape) {
+        console.log('Finished drawing shape');
+        
+        // Only add the shape if it has a valid size
+        if (
+          (this.currentShape.type === 'pen' && this.currentShape.points.length > 1) ||
+          (this.currentShape.type !== 'pen' && 
+           (Math.abs(this.currentShape.width) > 5 || Math.abs(this.currentShape.height) > 5))
+        ) {
+          // Add the new shape
+          const newShape = { ...this.currentShape };
+          
+          // Normalize negative width/height
+          if (newShape.width < 0) {
+            newShape.x += newShape.width;
+            newShape.width = Math.abs(newShape.width);
+          }
+          if (newShape.height < 0) {
+            newShape.y += newShape.height;
+            newShape.height = Math.abs(newShape.height);
+          }
+          
+          // Add the shape
+          this.$emit('shape-added', newShape);
+          
+          // Select the new shape
+          this.localSelectedShapes = [newShape];
+          this.$emit('shapes-selected', [newShape]);
+        }
+        
+        // Reset drawing state
+        this.currentShape = null;
+      }
+      
+      // Handle shape dragging completion
+      if (this.isDragging && this.localSelectedShapes.length > 0) {
+        console.log('Finished dragging shapes');
+        
+        // Emit the final shape update
+        const updatedShapes = this.shapes.map(s => {
+          const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
+          return movedShape || s;
+        });
+        
+        this.$emit('shape-updated', updatedShapes);
+      }
+      
+      // Reset all interaction states
+      this.isDrawing = false;
+      this.isDragging = false;
+      this.isResizing = false;
+      this.isRotating = false;
+      this.resizeHandle = null;
+      
+      // Force a render to update the display
+      this.render();
+      
+      // Check if mouse is over the debug overlay
+      if (this.showDebugOverlay) {
+        // Get canvas-relative coordinates
+        const rect = this.$refs.canvas.getBoundingClientRect();
+        const canvasX = e.clientX - rect.left;
+        const canvasY = e.clientY - rect.top;
+        
+        // Simple hit test directly here
+        const { x: overlayX, y: overlayY } = this.debugInfo.position;
+        const { width, height } = this.debugInfo.size;
+        
+        // Check if point is within overlay bounds
+        if (
+          canvasX >= overlayX && 
+          canvasX <= overlayX + width && 
+          canvasY >= overlayY && 
+          canvasY <= overlayY + height
+        ) {
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
+      }
+      
+      if (this.isDrawing && this.currentShape) {
+        console.log('Finishing drawing shape:', this.currentShape);
+        
+        // Ensure minimum size for non-text/pen shapes
+        if (Math.abs(this.currentShape.width) > 5 || Math.abs(this.currentShape.height) > 5 || 
+            this.currentShape.type === 'text' || this.currentShape.type === 'pen') {
+          
+          // Fix negative dimensions
+          if (this.currentShape.width < 0) {
+            this.currentShape.x += this.currentShape.width;
+            this.currentShape.width = Math.abs(this.currentShape.width);
+          }
+          if (this.currentShape.height < 0) {
+            this.currentShape.y += this.currentShape.height;
+            this.currentShape.height = Math.abs(this.currentShape.height);
+          }
+          
+          // Ensure shape has valid colors
+          if (!this.currentShape.fill || this.currentShape.fill === '') {
+            this.currentShape.fill = '#3B82F6'; // Default blue
+          }
+          
+          if (!this.currentShape.stroke || this.currentShape.stroke === '') {
+            this.currentShape.stroke = '#2563EB'; // Default blue
+          }
+          
+          // Create a deep copy of the shape to avoid reference issues
+          const newShape = JSON.parse(JSON.stringify(this.currentShape));
+          
+          // Ensure the shape has a layer ID
+          if (!newShape.layerId && this.activeLayer) {
+            newShape.layerId = this.activeLayer.id;
+          }
+          
+          console.log('Adding new shape to canvas:', newShape);
+          
+          // Add the shape to the existing shapes
+          const updatedShapes = [...this.shapes, newShape];
+          
+          // Emit the event to add the shape
+          this.$emit('shape-added', updatedShapes);
+          
+          // Select the new shape
+          this.localSelectedShapes = [newShape];
+          this.$emit('shapes-selected', [newShape]);
+        } else {
+          console.log('Shape too small, discarding');
+        }
+        
+        // Reset drawing state
+        this.currentShape = null;
+        this.isDrawing = false;
+      } else if (this.isDragging) {
+        this.isDragging = false;
+        const updatedShapes = this.shapes.map(s => {
+          const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
+          return movedShape || s;
+        });
+        this.$emit('shape-updated', updatedShapes);
+      } else if (this.isResizing) {
+        this.isResizing = false;
+        this.resizeHandle = null;
+        const shape = this.localSelectedShapes[0];
+        const updatedShapes = this.shapes.map(s => s.id === shape.id ? { ...s, x: shape.x, y: shape.y, width: shape.width, height: shape.height } : s);
+        this.$emit('shape-updated', updatedShapes);
+      } else if (this.isRotating) {
+        this.isRotating = false;
+        const shape = this.localSelectedShapes[0];
+        const updatedShapes = this.shapes.map(s => s.id === shape.id ? { ...s, rotation: shape.rotation } : s);
+        this.$emit('shape-updated', updatedShapes);
+      } else if (this.selectionStart) {
+        if (!this.currentShape) {
+          console.error('Selection rectangle is active but currentShape is null');
+          this.selectionStart = null;
+          return;
+        }
+        console.log('Selection rectangle completed');
+        let selX = this.currentShape.x;
+        let selY = this.currentShape.y;
+        let selWidth = this.currentShape.width;
+        let selHeight = this.currentShape.height;
+        if (selWidth < 0) {
+          selX += selWidth;
+          selWidth = Math.abs(selWidth);
+        }
+        if (selHeight < 0) {
+          selY += selHeight;
+          selHeight = Math.abs(selHeight);
+        }
+        if (selWidth > 5 && selHeight > 5) {
+          const newSelection = this.shapes.filter(shape => {
+            const shapeLeft = shape.x;
+            const shapeRight = shape.x + (shape.width || 0);
+            const shapeTop = shape.y;
+            const shapeBottom = shape.y + (shape.height || 0);
+            const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+            return !(
+              shapeRight < selX ||
+              shapeLeft > selX + selWidth ||
+              shapeBottom < selY ||
+              shapeTop > selY + selHeight ||
+              (shapeLayer && !shapeLayer.visible)
+            );
+          });
+          this.localSelectedShapes = newSelection;
+          this.$emit('shapes-selected', newSelection);
+          console.log('Selected shapes in rectangle:', newSelection.length);
+        }
+        this.selectionStart = null;
+        this.currentShape = null;
+      }
+      this.render();
+    },
+    handleClick(e) {
+      // Get canvas-relative coordinates
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      // Check if clicking on a shape
+      const shape = this.getShapeAt(x, y);
+      
+      if (shape && !this.isDrawing && !this.isDragging && !this.isResizing && !this.isRotating) {
+        const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+        if (shapeLayer && !shapeLayer.frozen) {
+          if (e.altKey) {
+            // Alt+Click to drag shape to library
+            this.startShapeDrag(e);
+          } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            // Multi-select with modifier key
+            const shapeIndex = this.localSelectedShapes.findIndex(s => s.id === shape.id);
+            if (shapeIndex === -1) {
+              this.localSelectedShapes.push(shape);
+            }
+            this.$emit('shapes-selected', [...this.localSelectedShapes]);
+          } else {
+            // Single select
+            this.localSelectedShapes = [shape];
+            this.$emit('shapes-selected', [shape]);
+          }
+        }
+      } else if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !this.isDrawing && !this.isDragging && !this.isResizing && !this.isRotating) {
+        // Clear selection if clicking on empty space
+        this.localSelectedShapes = [];
+        this.$emit('shapes-selected', []);
+      }
+      
+      this.render();
+    },
+    handleDoubleClick(e) {
+      // Get canvas-relative coordinates
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+      const x = (e.clientX - rect.left - centerX) / this.zoom;
+      const y = (e.clientY - rect.top - centerY) / this.zoom;
+      
+      // Check if double-clicking on a text shape
+      const shape = this.getShapeAt(x, y);
+      if (shape && shape.type === 'text' && !this.activeLayer.frozen) {
+        const newText = prompt('Enter new text:', shape.text);
+        if (newText !== null && newText !== shape.text) {
+          const updatedShapes = this.shapes.map(s => 
+            s.id === shape.id ? { ...s, text: newText } : s
+          );
+          this.$emit('shape-updated', updatedShapes);
+          this.render();
+        }
+      }
+    },
+    handleKeyDown(e) {
+      // Prevent browser defaults for certain keys
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Delete', 'Backspace'].includes(e.key)) {
+        e.preventDefault();
+      }
+      
+      // Handle keyboard shortcuts
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.localSelectedShapes.length > 0 && !this.activeLayer.frozen) {
+          const selectedIds = this.localSelectedShapes.map(shape => shape.id);
+          const updatedShapes = this.shapes.filter(shape => !selectedIds.includes(shape.id));
+          this.localSelectedShapes = [];
+          this.$emit('shapes-selected', []);
+          this.$emit('shape-updated', updatedShapes);
+          this.render();
+        }
+      } else if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'c' && this.localSelectedShapes.length > 0) {
+          // Copy selected shapes
+          this.clipboard = JSON.parse(JSON.stringify(this.localSelectedShapes));
+          console.log('Copied shapes:', this.clipboard.length);
+        } else if (e.key === 'v' && this.clipboard.length > 0 && !this.activeLayer.frozen) {
+          // Paste shapes
+          const newShapes = this.clipboard.map(shape => {
+            const newShape = JSON.parse(JSON.stringify(shape));
+            newShape.id = Date.now() + Math.random().toString(36).substr(2, 9);
+            newShape.x += 20;
+            newShape.y += 20;
+            newShape.layerId = this.activeLayer ? this.activeLayer.id : undefined;
+            return newShape;
+          });
+          const updatedShapes = [...this.shapes, ...newShapes];
+          this.localSelectedShapes = newShapes;
+          this.$emit('shapes-selected', newShapes);
+          this.$emit('shape-updated', updatedShapes);
+          this.render();
+        } else if (e.key === 'g' && this.localSelectedShapes.length > 1 && !this.activeLayer.frozen) {
+          // Group selected shapes
+          this.groupSelectedShapes();
+        } else if (e.key === 'u' && this.localSelectedShapes.length > 0 && !this.activeLayer.frozen) {
+          // Ungroup selected shapes
+          this.ungroupSelectedShapes();
+        }
+      } else if (e.key === 'Escape') {
+        // Cancel current operation
+        this.isDrawing = false;
+        this.isDragging = false;
+        this.isResizing = false;
+        this.isRotating = false;
+        this.currentShape = null;
+        this.selectionStart = null;
+        this.localSelectedShapes = [];
+        this.$emit('shapes-selected', []);
+        this.render();
+      } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && this.localSelectedShapes.length > 0 && !this.activeLayer.frozen) {
+        // Move selected shapes with arrow keys
+        const moveDistance = e.shiftKey ? 10 : 1;
+        let dx = 0;
+        let dy = 0;
+        
+        if (e.key === 'ArrowLeft') dx = -moveDistance;
+        if (e.key === 'ArrowRight') dx = moveDistance;
+        if (e.key === 'ArrowUp') dy = -moveDistance;
+        if (e.key === 'ArrowDown') dy = moveDistance;
+        
+        this.localSelectedShapes.forEach(shape => {
+          shape.x += dx;
+          shape.y += dy;
+        });
+        
+        const updatedShapes = this.shapes.map(s => {
+          const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
+          return movedShape || s;
+        });
+        
+        this.$emit('shape-updated', updatedShapes);
+        this.render();
+      }
+    },
+    getShapeAt(x, y) {
+      // Check shapes in reverse order to prioritize topmost shapes
+      for (let i = this.shapes.length - 1; i >= 0; i--) {
+        const shape = this.shapes[i];
+        const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+        if (!shapeLayer || !shapeLayer.visible) continue;
+        
+        if (shape.type === 'rectangle' || shape.type === 'rect' || shape.type === 'image' || shape.type === 'text' || shape.type === 'group') {
+          // Handle rotation
+          let shapeX = shape.x;
+          let shapeY = shape.y;
+          let shapeWidth = shape.width;
+          let shapeHeight = shape.height;
+          
+          if (shape.rotation) {
+            const centerX = shape.x + shape.width / 2;
+            const centerY = shape.y + shape.height / 2;
+            const cosTheta = Math.cos(shape.rotation);
+            const sinTheta = Math.sin(shape.rotation);
+            
+            // Transform the point to shape's coordinate system
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const rotatedX = dx * cosTheta + dy * sinTheta + centerX;
+            const rotatedY = -dx * sinTheta + dy * cosTheta + centerY;
+            
+            shapeX = shape.x;
+            shapeY = shape.y;
+            x = rotatedX;
+            y = rotatedY;
+          }
+          
+          if (
+            x >= shapeX &&
+            x <= shapeX + shapeWidth &&
+            y >= shapeY &&
+            y <= shapeY + shapeHeight
+          ) {
+            return shape;
+          }
+        } else if (shape.type === 'circle') {
+          const centerX = shape.x;
+          const centerY = shape.y;
+          const radius = Math.sqrt(shape.width ** 2 + shape.height ** 2);
+          const distance = Math.hypot(x - centerX, y - centerY);
+          if (distance <= radius) {
+            return shape;
+          }
+        } else if (shape.type === 'line' || shape.type === 'arrow') {
+          const x1 = shape.x;
+          const y1 = shape.y;
+          const x2 = shape.x + shape.width;
+          const y2 = shape.y + shape.height;
+          
+          // Calculate distance from point to line
+          const length = Math.hypot(x2 - x1, y2 - y1);
+          if (length === 0) continue;
+          
+          const t = Math.max(0, Math.min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / (length * length)));
+          const projectionX = x1 + t * (x2 - x1);
+          const projectionY = y1 + t * (y2 - y1);
+          const distance = Math.hypot(x - projectionX, y - projectionY);
+          
+          if (distance <= 5 / this.zoom) {
+            return shape;
+          }
+        } else if (shape.type === 'ellipse') {
+          const centerX = shape.x + shape.width / 2;
+          const centerY = shape.y + shape.height / 2;
+          const rx = Math.abs(shape.width / 2);
+          const ry = Math.abs(shape.height / 2);
+          
+          // Check if point is inside ellipse
+          const dx = x - centerX;
+          const dy = y - centerY;
+          if ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) {
+            return shape;
+          }
+        } else if (shape.type === 'pen' && shape.points && shape.points.length > 0) {
+          // Check proximity to pen stroke
+          for (let i = 1; i < shape.points.length; i++) {
+            const x1 = shape.points[i - 1][0];
+            const y1 = shape.points[i - 1][1];
+            const x2 = shape.points[i][0];
+            const y2 = shape.points[i][1];
+            
+            const length = Math.hypot(x2 - x1, y2 - y1);
+            if (length === 0) continue;
+            
+            const t = Math.max(0, Math.min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / (length * length)));
+            const projectionX = x1 + t * (x2 - x1);
+            const projectionY = y1 + t * (y2 - y1);
+            const distance = Math.hypot(x - projectionX, y - projectionY);
+            
+            if (distance <= 5 / this.zoom) {
+              return shape;
+            }
+          }
+        }
+      }
+      return null;
+    },
+    groupSelectedShapes() {
+      if (this.localSelectedShapes.length < 2) {
+        console.log('Not enough shapes selected to group');
+        return;
+      }
+      
+      // Calculate bounding box
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      
+      this.localSelectedShapes.forEach(shape => {
+        minX = Math.min(minX, shape.x);
+        minY = Math.min(minY, shape.y);
+        maxX = Math.max(maxX, shape.x + shape.width);
+        maxY = Math.max(maxY, shape.y + shape.height);
+      });
+      
+      const groupShape = {
+        id: Date.now(),
+        type: 'group',
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY,
+        rotation: 0,
+        lineWidth: 1,
+        stroke: '#000000',
+        fill: '#00000000',
+        children: this.localSelectedShapes.map(shape => {
+          const childCopy = { ...shape };
+          childCopy.originalX = childCopy.x;
+          childCopy.originalY = childCopy.y;
+          childCopy.x = childCopy.x - minX;
+          childCopy.y = childCopy.y - minY;
+          return childCopy;
+        })
+      };
+      
+      const selectedIds = this.localSelectedShapes.map(shape => shape.id);
+      const remainingShapes = this.shapes.filter(shape => !selectedIds.includes(shape.id));
+      const updatedShapes = [...remainingShapes, groupShape];
+      
+      this.localSelectedShapes = [groupShape];
+      this.$emit('shapes-selected', [groupShape]);
+      this.$emit('shape-updated', updatedShapes);
+      console.log('Created group with', groupShape.children.length, 'shapes');
+    },
+    ungroupSelectedShapes() {
+      if (this.localSelectedShapes.length === 0) {
+        console.log('No shapes selected to ungroup');
+        return;
+      }
+      
+      let updatedShapes = [...this.shapes];
+      let hasUngroup = false;
+      
+      this.localSelectedShapes.forEach(selectedShape => {
+        if (selectedShape.type === 'group' && selectedShape.children) {
+          hasUngroup = true;
+          updatedShapes = updatedShapes.filter(shape => shape.id !== selectedShape.id);
+          const extractedChildren = selectedShape.children.map(child => {
+            const childCopy = { ...child };
+            childCopy.x = selectedShape.x + childCopy.x;
+            childCopy.y = selectedShape.y + childCopy.y;
+            childCopy.id = Date.now() + Math.floor(Math.random() * 1000);
+            return childCopy;
+          });
+          updatedShapes = [...updatedShapes, ...extractedChildren];
+          console.log('Ungrouped', extractedChildren.length, 'shapes');
+        }
+      });
+      
+      if (!hasUngroup) {
+        console.log('No groups found in selection');
+        return;
+      }
+      
+      this.localSelectedShapes = [];
+      this.$emit('shapes-selected', []);
+      this.$emit('shape-updated', updatedShapes);
+    },
+    getHandleAt(x, y) {
+      if (!this.localSelectedShapes.length) return null;
+      const shape = this.localSelectedShapes[0];
+      const handles = [
+        { type: 'resize', corner: 'top-left', x: shape.x, y: shape.y },
+        { type: 'resize', corner: 'top-right', x: shape.x + shape.width, y: shape.y },
+        { type: 'resize', corner: 'bottom-left', x: shape.x, y: shape.y + shape.height },
+        { type: 'resize', corner: 'bottom-right', x: shape.x + shape.width, y: shape.y + shape.height },
+        { type: 'resize', corner: 'top-middle', x: shape.x + shape.width/2, y: shape.y },
+        { type: 'resize', corner: 'bottom-middle', x: shape.x + shape.width/2, y: shape.y + shape.height },
+        { type: 'resize', corner: 'left-middle', x: shape.x, y: shape.y + shape.height/2 },
+        { type: 'resize', corner: 'right-middle', x: shape.x + shape.width, y: shape.y + shape.height/2 },
+        { type: 'rotate', x: shape.x + shape.width / 2, y: shape.y - 20 / this.zoom }
+      ];
+      const hitRadius = 15 / this.zoom;
+      return handles.find(h => Math.hypot(x - h.x, y - h.y) < hitRadius);
+    },
+    render() {
+      console.log('Render called with shapes:', this.shapes.length);
+      const startTime = performance.now();
+      
+      // Make sure we have a canvas element
+      const canvas = this.$refs.canvas;
+      if (!canvas) {
+        console.warn('Canvas element not found during render, will retry');
+        // Schedule another attempt after a short delay
+        setTimeout(() => {
+          this.render();
+        }, 100);
+        return;
+      }
+      
+      // Try to initialize the canvas if context is not available
+      if (!this.ctx) {
+        console.warn('No canvas context available, attempting to initialize');
+        if (!this.initializeCanvas()) {
+          console.error('Failed to initialize canvas context');
+          
+          // Schedule another attempt after a short delay
+          setTimeout(() => {
+            this.render();
+          }, 100);
+          return;
+        }
+      }
+      
+      // Double-check that we have a context
+      if (!this.ctx) {
+        console.error('Still no canvas context after initialization attempt');
+        return;
+      }
+      
+      // Log the shapes we're about to render
+      console.log('Rendering shapes:', this.shapes.map(s => ({ id: s.id, type: s.type, x: s.x, y: s.y })));
+      
+      const ctx = this.ctx;
+      if (!ctx) {
+        console.error('Canvas context still not available after initialization');
+        return;
+      }
+      
+      // Don't use the render requested flag as it can prevent renders
+      // if (this._renderRequested) return;
+      this._renderRequested = true;
+      
+      // Use requestAnimationFrame for smoother rendering
+      this.animationFrameId = requestAnimationFrame(() => {
+        this._renderRequested = false;
+        
+        // Check if static canvas needs to be updated
+        if (this.staticCanvasDirty || 
+            this.lastGridSize !== this.gridSize || 
+            this.lastGridOpacity !== this.gridOpacity ||
+            this.lastCanvasWidth !== this.canvasWidth ||
+            this.lastCanvasHeight !== this.canvasHeight ||
+            this.lastZoom !== this.zoom) {
+          
+          // Update static canvas
+          this._renderStaticElements();
+          
+          // Update tracking variables
+          this.lastGridSize = this.gridSize;
+          this.lastGridOpacity = this.gridOpacity;
+          this.lastCanvasWidth = this.canvasWidth;
+          this.lastCanvasHeight = this.canvasHeight;
+          this.lastZoom = this.zoom;
+          this.staticCanvasDirty = false;
+        }
+        
+        // Perform the main render
+        this._performRender(ctx);
+        
+        const renderTime = performance.now() - startTime;
+        if (renderTime > 50) {
+          console.log(`Slow render detected: ${renderTime.toFixed(2)}ms`);
+        }
+      });
+    },
+    
+    /**
+     * Renders static elements (background and grid) to the static canvas
+     */
+   _renderStaticElements() {
+  if (!this.staticCtx || !this.staticCanvas) return;
+  
+  // Resize static canvas if needed
+  if (this.staticCanvas.width !== this.canvasWidth || this.staticCanvas.height !== this.canvasHeight) {
+    this.staticCanvas.width = this.canvasWidth;
+    this.staticCanvas.height = this.canvasHeight;
+  }
+  
+  const ctx = this.staticCtx;
+  ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+  
+  // Save context state
+  ctx.save();
+  
+  // Draw background
+  ctx.fillStyle = '#333333';
+  ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+  
+  // Apply zoom and offset
+  const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
+  const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
+  ctx.translate(centerX, centerY);
+  ctx.scale(this.zoom, this.zoom);
+  
+  // Draw canvas background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+  
+  // Draw canvas border
+  ctx.strokeStyle = '#999999';
+  ctx.lineWidth = 1 / this.zoom;
+  ctx.strokeRect(0, 0, this.canvasWidth, this.canvasHeight);
+  
+  // Draw grid if enabled
+  if (this.gridSize) {
+    const step = this.gridSize;
+    ctx.strokeStyle = `rgba(0, 0, 0, ${this.gridOpacity})`;
+    ctx.lineWidth = 0.5 / this.zoom;
+    
+    // Draw vertical grid lines
+    for (let x = 0; x <= this.canvasWidth; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, this.canvasHeight);
+      ctx.stroke();
+    }
+    
+    // Draw horizontal grid lines
+    for (let y = 0; y <= this.canvasHeight; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.canvasWidth, y);
+      ctx.stroke();
+    }
+  }
+  
+  // Restore context state
+   ctx.restore();
+},
+
+  }
+};
+</script>

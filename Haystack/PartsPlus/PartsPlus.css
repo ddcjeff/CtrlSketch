@@ -1,0 +1,268 @@
+.parts-plus {
+  font-family: Arial, sans-serif;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f0f0f0;
+  border: 1px solid #999;
+}
+
+.header {
+  display: flex;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #999;
+  padding: 5px;
+  align-items: center;
+}
+
+.title {
+  font-weight: bold;
+  margin-right: 20px;
+}
+
+.menu-tabs {
+  display: flex;
+  flex-grow: 1;
+}
+
+.tab {
+  padding: 5px 10px;
+  margin-right: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.tab.active {
+  background-color: #ddd;
+}
+
+/* Popup menu for Class and SubClass filters */
+.class-popup-menu {
+  background-color: white;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  min-width: 180px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.class-popup-header {
+  background-color: #f0f0f0;
+  padding: 8px 12px;
+  font-weight: bold;
+  border-bottom: 1px solid #ddd;
+}
+
+.class-popup-item {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.class-popup-item:hover {
+  background-color: #f0f9ff;
+}
+
+.window-controls {
+  display: flex;
+}
+
+.window-controls button {
+  width: 25px;
+  height: 25px;
+  margin-left: 5px;
+  background: none;
+  border: 1px solid #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.parts-table {
+  flex: 1;
+  overflow: auto;
+  background-color: #fff;
+  padding: 5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 5px;
+  text-align: left;
+}
+
+th {
+  background-color: #f4f4f4;
+  font-weight: normal;
+}
+
+tr.selected {
+  background-color: #1e90ff;
+  color: white;
+}
+
+.expand-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.filter-section {
+  background-color: #f0f0f0;
+  padding: 10px;
+  border-top: 1px solid #999;
+}
+
+.filter-label {
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.filter-controls {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+
+.filter-row {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.filter-group {
+  margin-right: 20px;
+}
+
+.filter-group label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.filter-group select {
+  padding: 5px;
+  width: 200px;
+}
+
+.filter-button-container {
+  display: flex;
+  gap: 10px;
+}
+
+.apply-filters-btn {
+  height: 30px;
+  margin-top: 24px;
+  padding: 0 15px;
+  background-color: #1e90ff;
+  color: white;
+  border: 1px solid #0066cc;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.apply-filters-btn:hover {
+  background-color: #0066cc;
+}
+
+.reset-filters-btn {
+  height: 30px;
+  margin-top: 24px;
+  padding: 0 15px;
+  background-color: #f0f0f0;
+  border: 1px solid #999;
+  cursor: pointer;
+}
+
+.reset-filters-btn:hover {
+  background-color: #e0e0e0;
+}
+
+.csv-import-btn {
+  height: 30px;
+  margin-top: 24px;
+  padding: 0 15px;
+  background-color: #f0f0f0;
+  border: 1px solid #999;
+  cursor: pointer;
+}
+
+.csv-import-btn:hover {
+  background-color: #e0e0e0;
+}
+
+.filtered-count {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #666;
+  text-align: right;
+  padding-right: 10px;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: space-between;
+}
+
+.action-button {
+  padding: 5px 10px;
+  background-color: #f0f0f0;
+  border: 1px solid #999;
+  cursor: pointer;
+}
+
+.edit-part-form {
+  background-color: #f0f0f0;
+  padding: 10px;
+  border-top: 1px solid #999;
+}
+
+.edit-part-form h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.edit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.edit-form-group {
+  margin-bottom: 10px;
+}
+
+.edit-form-group label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.edit-form-group input,
+.edit-form-group select {
+  width: 100%;
+  padding: 5px;
+}
+
+.file-input-container {
+  display: flex;
+}
+
+.file-input-container input {
+  flex: 1;
+  margin-right: 5px;
+}
+
+.select-file-btn {
+  padding: 5px 10px;
+  background-color: #f0f0f0;
+  border: 1px solid #999;
+  cursor: pointer;
+}

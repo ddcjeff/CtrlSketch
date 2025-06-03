@@ -1,5 +1,5 @@
 <template>
-  <div ref="wrapper" class="wrapper canvas-workspace" @dblclick="resetZoom">
+  <div ref="wrapper" class="wrapper" @dblclick="resetZoom">
     <canvas
       ref="canvas"
       class="styled-canvas"
@@ -157,7 +157,7 @@ export default {
       },
       showDebugOverlay: false,
       debugInfo: {
-        position: { x: 0, y: 0 }, // Will be centered when debug overlay is shown
+        position: { x: 10, y: 10 },
         size: { width: 400, height: 400 },
         isDragging: false,
         dragStart: { x: 0, y: 0 }
@@ -295,6 +295,24 @@ export default {
     this.shapeCache.clear();
   },
   methods: {
+
+    loadImageForShape(shape) {
+      if (shape.imgEl || shape.imageError) return;
+      const img = new Image();
+      img.onload = () => {
+        shape.imageLoaded = true;
+        shape.imgEl = this.$markRaw ? this.$markRaw(img) : img;
+        this.render();
+      };
+      img.onerror = () => {
+        console.warn(`Image failed to load for shape:`, shape);
+        shape.imageError = true;
+        shape.imgEl = null;
+        this.render();
+      };
+      img.src = shape.src;
+    },
+
     /**
      * Loads or reloads an image for a shape with improved error handling
      * @param {Object} shape - The shape object containing image data
@@ -1067,7 +1085,7 @@ export default {
           isResizing: this.isResizing,
           isRotating: this.isRotating,
           hasSelectionStart: !!this.selectionStart,
-          selectedShapesCount: this.selectedShapes.length
+          selectedShapesCount: this.localSelectedShapes.length
         });
         let actionTaken = false;
         if (this.isDrawing || this.tool) {
@@ -1099,8 +1117,8 @@ export default {
           console.log('Selection rectangle canceled');
           actionTaken = true;
         }
-        if (!actionTaken && this.selectedShapes.length > 0) {
-          this.selectedShapes = [];
+        if (!actionTaken && this.localSelectedShapes.length > 0) {
+          this.localSelectedShapes = [];
           this.$emit('shapes-selected', []);
           console.log('Selection cleared');
         }
@@ -1385,17 +1403,6 @@ export default {
       
       console.log('Debug overlay toggled:', this.showDebugOverlay);
       
-      // If showing the debug overlay, center it on the canvas
-      if (this.showDebugOverlay) {
-        // Calculate center position
-        const centerX = Math.max(0, (this.canvasWidth - this.debugInfo.size.width) / 2);
-        const centerY = Math.max(0, (this.canvasHeight - this.debugInfo.size.height) / 2);
-        
-        // Update position
-        this.debugInfo.position = { x: centerX, y: centerY };
-        console.log('Debug overlay centered at:', centerX, centerY);
-      }
-      
       // Reset any active drawing or selection
       this.isDrawing = false;
       this.isDragging = false;
@@ -1416,7 +1423,7 @@ export default {
     /**
      * Legacy method for backward compatibility
      */
-    showDebugInfo(e) {
+    handleDebugInfoEvent(e) {
       // Prevent the event from creating shapes
       if (e) {
         e.stopPropagation();
@@ -1642,6 +1649,24 @@ export default {
           this.lastCanvasWidth = this.canvasWidth;
           this.lastCanvasHeight = this.canvasHeight;
           this.lastZoom = this.zoom;
+
+        // Draw all shapes
+        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+        this.shapes.forEach(shape => {
+          if (shape.type === 'image') {
+            if (!shape.imgEl || !shape.imageLoaded || shape.imageError) return;
+            ctx.drawImage(shape.imgEl, shape.x, shape.y, shape.width, shape.height);
+          } else {
+            // Basic shape rendering (rect fallback)
+            ctx.fillStyle = shape.fill || '#cccccc';
+            ctx.strokeStyle = shape.stroke || '#333333';
+            ctx.lineWidth = shape.lineWidth || 1;
+            ctx.beginPath();
+            ctx.rect(shape.x, shape.y, shape.width, shape.height);
+            ctx.fill();
+            ctx.stroke();
+          }
+        });
           this.staticCanvasDirty = false;
         }
         

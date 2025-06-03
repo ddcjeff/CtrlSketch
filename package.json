@@ -1,6 +1,6 @@
 {
   "name": "my-canvas-app",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -26,6 +26,7 @@
     "postcss": "^8.4.31",
     "tailwindcss-animate": "^1.0.7",
     "vite": "^6.3.5",
+    "vite-plugin-package-version": "^1.1.0",
     "vitest": "^3.1.4",
     "vue": "^3.5.15"
   },

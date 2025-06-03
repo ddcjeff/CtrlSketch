@@ -1,0 +1,598 @@
+// IMPORTANT FILES TO UPDATE WITH LINE STYLE CHANGES
+
+// 1. First, make sure your types/drawing.ts has these type definitions:
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+export type ArrowStyle = 'none' | 'simple' | 'triangle' | 'filled-triangle' | 'diamond' | 'circle';
+
+// Update the BaseElement interface to include lineStyle:
+export interface BaseElement {
+  id: number;
+  type: string;
+  strokeColor: string;
+  strokeWidth: number;
+  lineStyle?: LineStyle;
+  rotation: number;
+}
+
+// Update ShapeElement to include arrowStyle:
+export interface ShapeElement extends BaseElement {
+  type: 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'part' | 'connection';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  fillColor: string;
+  arrowStyle?: ArrowStyle; // For 'arrow' and 'line' types
+}
+
+// 2. In DrawingApp.tsx, add these state variables:
+const [lineWidth, setLineWidth] = useState<number>(2);
+const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+const [arrowStyle, setArrowStyle] = useState<'none' | 'simple' | 'triangle' | 'filled-triangle' | 'diamond' | 'circle'>('simple');
+const [showLineOptions, setShowLineOptions] = useState<boolean>(false);
+
+// 3. When creating new elements, update to include these styles:
+// For rectangle, ellipse, line, and part:
+let newElement: ShapeElement = {
+  id,
+  type: tool,
+  x1: x,
+  y1: y,
+  x2: x,
+  y2: y,
+  strokeColor,
+  strokeWidth: lineWidth,
+  lineStyle,
+  fillColor,
+  rotation: 0
+};
+
+// Add arrow style for arrows
+if (tool === 'arrow') {
+  newElement = {
+    ...newElement,
+    arrowStyle
+  };
+}
+
+// For freehand drawing:
+const newElement: FreehandElement = {
+  id,
+  type: 'freehand',
+  points: [{ x, y }],
+  strokeColor,
+  strokeWidth: lineWidth,
+  lineStyle,
+  rotation: 0
+};
+
+// 4. Add the UI toolbar components to enable line style selection.
+// In the toolbar section of DrawingApp.tsx, add:
+
+<div className="text-sm ml-4">Line:</div>
+<div className="flex space-x-1">
+  {/* Line Width Button */}
+  <button
+    className="px-2 py-1 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 rounded dark:text-gray-200"
+    onClick={() => setShowLineOptions(prev => !prev)}
+    title="Line Style Options"
+  >
+    {lineWidth}px
+  </button>
+  
+  {/* Line Style Button */}
+  <button
+    className="px-2 py-1 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 rounded dark:text-gray-200 flex items-center justify-center"
+    onClick={() => setShowLineOptions(prev => !prev)}
+    title="Line Style Options"
+  >
+    {lineStyle === 'solid' && <span>───</span>}
+    {lineStyle === 'dashed' && <span>- - -</span>}
+    {lineStyle === 'dotted' && <span>· · ·</span>}
+  </button>
+  
+  {/* Arrow Style Button (only show when arrow tool is selected) */}
+  {(tool === 'arrow' || (selectedElement && selectedElement.type === 'arrow')) && (
+    <button
+      className="px-2 py-1 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 rounded dark:text-gray-200"
+      onClick={() => setShowLineOptions(prev => !prev)}
+      title="Arrow Style Options"
+    >
+      {arrowStyle === 'simple' && '→'}
+      {arrowStyle === 'triangle' && '▷'}
+      {arrowStyle === 'filled-triangle' && '▶'}
+      {arrowStyle === 'diamond' && '◊'}
+      {arrowStyle === 'circle' && '○'}
+      {arrowStyle === 'none' && '—'}
+    </button>
+  )}
+</div>
+
+{/* Line and Arrow Style Popup */}
+{showLineOptions && (
+  <div className="absolute top-16 left-80 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded shadow-xl z-30 p-4 space-y-4 w-56">
+    <div>
+      <h3 className="text-sm font-semibold mb-2 dark:text-gray-200">Line Thickness</h3>
+      <div className="flex flex-col space-y-1">
+        <input 
+          type="range" 
+          min="1" 
+          max="10" 
+          value={lineWidth}
+          onChange={(e) => {
+            const newWidth = parseInt(e.target.value);
+            setLineWidth(newWidth);
+            
+            // If an element is selected, update its stroke width
+            if (selectedId !== null) {
+              setElements(prev => 
+                prev.map(el => 
+                  el.id === selectedId ? { ...el, strokeWidth: newWidth } : el
+                )
+              );
+            }
+          }}
+          className="w-full"
+        />
+        <div className="flex justify-between text-xs dark:text-gray-400">
+          <span>1px</span>
+          <span>5px</span>
+          <span>10px</span>
+        </div>
+      </div>
+    </div>
+    
+    <div>
+      <h3 className="text-sm font-semibold mb-2 dark:text-gray-200">Line Style</h3>
+      <div className="grid grid-cols-3 gap-2">
+        {['solid', 'dashed', 'dotted'].map(style => (
+          <button
+            key={style}
+            className={`p-2 border dark:border-gray-600 rounded ${
+              lineStyle === style ? 'bg-blue-100 dark:bg-blue-800 border-blue-500 dark:border-blue-500' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+            onClick={() => {
+              setLineStyle(style as 'solid' | 'dashed' | 'dotted');
+              
+              // If an element is selected, update its line style
+              if (selectedId !== null) {
+                setElements(prev => 
+                  prev.map(el => 
+                    el.id === selectedId ? { ...el, lineStyle: style } : el
+                  )
+                );
+              }
+            }}
+          >
+            <div className="h-0.5 bg-black dark:bg-white">
+              {style === 'solid' && <div className="h-full w-full"></div>}
+              {style === 'dashed' && <div className="h-full w-full border-dashed border-t-2"></div>}
+              {style === 'dotted' && <div className="h-full w-full border-dotted border-t-2"></div>}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+    
+    {(tool === 'arrow' || (selectedElement && selectedElement.type === 'arrow')) && (
+      <div>
+        <h3 className="text-sm font-semibold mb-2 dark:text-gray-200">Arrow Style</h3>
+        <div className="grid grid-cols-3 gap-2">
+          {['none', 'simple', 'triangle', 'filled-triangle', 'diamond', 'circle'].map(style => (
+            <button
+              key={style}
+              className={`p-2 border dark:border-gray-600 rounded flex items-center justify-center ${
+                arrowStyle === style ? 'bg-blue-100 dark:bg-blue-800 border-blue-500 dark:border-blue-500' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              onClick={() => {
+                setArrowStyle(style as any);
+                
+                // If an element is selected, update its arrow style
+                if (selectedId !== null && selectedElement?.type === 'arrow') {
+                  setElements(prev => 
+                    prev.map(el => 
+                      el.id === selectedId ? { ...el as ShapeElement, arrowStyle: style } : el
+                    )
+                  );
+                }
+              }}
+            >
+              {style === 'none' && '—'}
+              {style === 'simple' && '→'}
+              {style === 'triangle' && '▷'}
+              {style === 'filled-triangle' && '▶'}
+              {style === 'diamond' && '◊'}
+              {style === 'circle' && '○'}
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+    
+    <div className="flex justify-end mt-2">
+      <button 
+        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+        onClick={() => setShowLineOptions(false)}
+      >
+        Close
+      </button>
+    </div>
+  </div>
+)}
+
+// 5. Update rendering of elements to include line styles:
+
+// For rectangle:
+if (element.type === 'rectangle') {
+  const { x1, y1, x2, y2, strokeColor, strokeWidth = 1, fillColor, lineStyle = 'solid' } = element as ShapeElement;
+  const width = Math.abs(x2 - x1);
+  const height = Math.abs(y2 - y1);
+  
+  // Get appropriate border style
+  let borderStyle = 'solid';
+  if (lineStyle === 'dashed') {
+    borderStyle = 'dashed';
+  } else if (lineStyle === 'dotted') {
+    borderStyle = 'dotted';
+  }
+  
+  return (
+    <div
+      key={element.id}
+      style={{
+        position: 'absolute',
+        left: Math.min(x1, x2),
+        top: Math.min(y1, y2),
+        width,
+        height,
+        border: `${strokeWidth}px ${borderStyle} ${strokeColor}`,
+        backgroundColor: fillColor === 'transparent' ? 'transparent' : fillColor,
+        ...transformStyle
+      }}
+    />
+  );
+}
+
+// For lines and arrows, use SVG to have better control of styling:
+if (element.type === 'line' || element.type === 'arrow') {
+  const { x1, y1, x2, y2, strokeColor, strokeWidth = 1, lineStyle = 'solid', arrowStyle = 'simple' } = element as ShapeElement;
+  
+  // Calculate line length and angle
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  
+  const isArrow = element.type === 'arrow';
+  
+  return (
+    <div
+      key={element.id}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: '100%', 
+        height: '100%',
+        pointerEvents: 'none',
+        ...transformStyle
+      }}
+    >
+      <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+        <line
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeDasharray={
+            lineStyle === 'dashed' ? `${strokeWidth * 3} ${strokeWidth * 2}` : 
+            lineStyle === 'dotted' ? `${strokeWidth} ${strokeWidth * 2}` : 
+            undefined
+          }
+        />
+        
+        {isArrow && (
+          <g transform={`translate(${x2},${y2}) rotate(${angle})`}>
+            {arrowStyle === 'simple' && (
+              <path 
+                d="M -15 -6 L 0 0 L -15 6" 
+                fill="none" 
+                stroke={strokeColor} 
+                strokeWidth={strokeWidth} 
+              />
+            )}
+            {arrowStyle === 'triangle' && (
+              <path 
+                d="M -15 -8 L 0 0 L -15 8 Z" 
+                fill="none" 
+                stroke={strokeColor} 
+                strokeWidth={strokeWidth} 
+              />
+            )}
+            {arrowStyle === 'filled-triangle' && (
+              <path 
+                d="M -15 -8 L 0 0 L -15 8 Z" 
+                fill={strokeColor} 
+                stroke={strokeColor} 
+                strokeWidth={strokeWidth} 
+              />
+            )}
+            {arrowStyle === 'diamond' && (
+              <path 
+                d="M -20 0 L -10 -8 L 0 0 L -10 8 Z" 
+                fill="none" 
+                stroke={strokeColor} 
+                strokeWidth={strokeWidth}
+              />
+            )}
+            {arrowStyle === 'circle' && (
+              <circle 
+                cx="-10" 
+                cy="0" 
+                r="6" 
+                fill="none" 
+                stroke={strokeColor} 
+                strokeWidth={strokeWidth} 
+              />
+            )}
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+// For freehand:
+if (element.type === 'freehand') {
+  const { points, strokeColor, strokeWidth = 2, lineStyle = 'solid' } = element as FreehandElement;
+  
+  if (points.length < 2) return null;
+  
+  // Generate SVG path from points
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    path += ` L ${points[i].x} ${points[i].y}`;
+  }
+  
+  // Get appropriate dash array for line style
+  let strokeDasharray = '';
+  if (lineStyle === 'dashed') {
+    strokeDasharray = `${strokeWidth * 3} ${strokeWidth * 2}`;
+  } else if (lineStyle === 'dotted') {
+    strokeDasharray = `${strokeWidth} ${strokeWidth * 2}`;
+  }
+  
+  return (
+    <svg
+      key={element.id}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        ...transformStyle
+      }}
+    >
+      <path
+        d={path}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        strokeDasharray={strokeDasharray}
+        fill="none"
+      />
+    </svg>
+  );
+}
+
+// 6. Create Component Files (if they don't exist)
+
+// LineStylePicker.tsx
+import React from 'react';
+import { LineStyle } from '../types/drawing';
+
+interface LineStylePickerProps {
+  currentStyle: LineStyle;
+  onChange: (style: LineStyle) => void;
+  disabled?: boolean;
+}
+
+const LineStylePicker: React.FC<LineStylePickerProps> = ({ 
+  currentStyle = 'solid', 
+  onChange,
+  disabled = false
+}) => {
+  const styles: LineStyle[] = ['solid', 'dashed', 'dotted'];
+  
+  return (
+    <div className="flex flex-col space-y-1">
+      <div className="text-sm font-medium dark:text-gray-300">Line Style</div>
+      <div className="flex space-x-2">
+        {styles.map(style => (
+          <button
+            key={style}
+            className={`w-12 h-8 flex items-center justify-center border dark:border-gray-600 rounded 
+              ${currentStyle === style 
+                ? 'bg-blue-500 text-white border-blue-600' 
+                : 'bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 dark:text-gray-200'
+              } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            onClick={() => !disabled && onChange(style)}
+            disabled={disabled}
+            title={`${style.charAt(0).toUpperCase()}${style.slice(1)} Line`}
+          >
+            <div className="w-8 flex items-center">
+              {style === 'solid' && (
+                <div className="w-full h-0.5 bg-current" />
+              )}
+              {style === 'dashed' && (
+                <div className="w-full flex">
+                  <div className="w-1.5 h-0.5 bg-current" />
+                  <div className="w-0.5 h-0.5 bg-transparent" />
+                  <div className="w-1.5 h-0.5 bg-current" />
+                  <div className="w-0.5 h-0.5 bg-transparent" />
+                  <div className="w-1.5 h-0.5 bg-current" />
+                </div>
+              )}
+              {style === 'dotted' && (
+                <div className="w-full flex">
+                  <div className="w-0.5 h-0.5 rounded-full bg-current" />
+                  <div className="w-1 h-0.5 bg-transparent" />
+                  <div className="w-0.5 h-0.5 rounded-full bg-current" />
+                  <div className="w-1 h-0.5 bg-transparent" />
+                  <div className="w-0.5 h-0.5 rounded-full bg-current" />
+                  <div className="w-1 h-0.5 bg-transparent" />
+                  <div className="w-0.5 h-0.5 rounded-full bg-current" />
+                </div>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default LineStylePicker;
+
+// LineThicknessPicker.tsx
+import React from 'react';
+
+interface LineThicknessPickerProps {
+  thickness: number;
+  onChange: (thickness: number) => void;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}
+
+const LineThicknessPicker: React.FC<LineThicknessPickerProps> = ({ 
+  thickness, 
+  onChange,
+  min = 1,
+  max = 10,
+  disabled = false
+}) => {
+  const thicknessOptions = [1, 2, 3, 5, 8, 10];
+  
+  return (
+    <div className="flex flex-col space-y-1">
+      <div className="text-sm font-medium dark:text-gray-300">Line Thickness</div>
+      <div className="flex space-x-2">
+        {thicknessOptions.map(value => (
+          <button
+            key={value}
+            className={`w-8 h-8 flex items-center justify-center border dark:border-gray-600 rounded 
+              ${thickness === value 
+                ? 'bg-blue-500 text-white border-blue-600' 
+                : 'bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 dark:text-gray-200'
+              } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            onClick={() => !disabled && onChange(value)}
+            disabled={disabled}
+            title={`${value}px`}
+          >
+            <div 
+              className="w-5 bg-current rounded-full" 
+              style={{ 
+                height: `${Math.min(Math.max(value, 1), 5)}px`, 
+              }} 
+            />
+          </button>
+        ))}
+      </div>
+      
+      {/* Optional: Add a slider for precise control */}
+      <div className="mt-2">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={thickness}
+          onChange={(e) => onChange(parseInt(e.target.value))}
+          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer"
+          disabled={disabled}
+        />
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>{min}px</span>
+          <span>{thickness}px</span>
+          <span>{max}px</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LineThicknessPicker;
+
+// ArrowStylePicker.tsx
+import React from 'react';
+import { ArrowStyle } from '../types/drawing';
+
+interface ArrowStylePickerProps {
+  currentStyle: ArrowStyle;
+  onChange: (style: ArrowStyle) => void;
+  disabled?: boolean;
+}
+
+const ArrowStylePicker: React.FC<ArrowStylePickerProps> = ({ 
+  currentStyle = 'simple', 
+  onChange,
+  disabled = false
+}) => {
+  const styles: ArrowStyle[] = ['none', 'simple', 'triangle', 'filled-triangle', 'diamond', 'circle'];
+  
+  return (
+    <div className="flex flex-col space-y-1">
+      <div className="text-sm font-medium dark:text-gray-300">Arrow Style</div>
+      <div className="flex flex-wrap gap-2">
+        {styles.map(style => (
+          <button
+            key={style}
+            className={`w-10 h-8 flex items-center justify-center border dark:border-gray-600 rounded 
+              ${currentStyle === style 
+                ? 'bg-blue-500 text-white border-blue-600' 
+                : 'bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 dark:text-gray-200'
+              } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            onClick={() => !disabled && onChange(style)}
+            disabled={disabled}
+            title={`${style.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Arrow`}
+          >
+            <svg 
+              width="24" 
+              height="12" 
+              viewBox="0 0 24 12" 
+              fill="none" 
+              stroke="currentColor" 
+              xmlns="http://www.w3.org/2000/svg"
+              className="overflow-visible"
+            >
+              {/* Line */}
+              <line x1="2" y1="6" x2="22" y2="6" strokeWidth="1.5" />
+              
+              {/* Arrow Styles */}
+              {style === 'simple' && (
+                <path d="M18 2L22 6L18 10" fill="none" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+              )}
+              {style === 'triangle' && (
+                <path d="M16 2L22 6L16 10Z" fill="none" strokeWidth="1.5" strokeLinejoin="round" />
+              )}
+              {style === 'filled-triangle' && (
+                <path d="M16 2L22 6L16 10Z" fill="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+              )}
+              {style === 'diamond' && (
+                <path d="M16 6L19 3L22 6L19 9L16 6Z" fill="none" strokeWidth="1.5" strokeLinejoin="round" />
+              )}
+              {style === 'circle' && (
+                <circle cx="19" cy="6" r="3" fill="none" strokeWidth="1.5" />
+              )}
+            </svg>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default ArrowStylePicker;

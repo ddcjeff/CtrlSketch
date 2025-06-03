@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CtrlSketch - Connector System</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    
+    button {
+      padding: 10px 15px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    button:hover {
+      background-color: #388e3c;
+    }
+    
+    .canvas-container {
+      border: 1px solid #ccc;
+      position: relative;
+      margin-bottom: 20px;
+      background-color: #f4f4f4;
+    }
+    
+    svg {
+      width: 100%;
+      height: 600px;
+      display: block;
+    }
+    
+    .control-point {
+      fill: #f44336;
+      stroke: white;
+      stroke-width: 2;
+    }
+    
+    .control-point.selected {
+      fill: #2196f3;
+      stroke-width: 3;
+    }
+    
+    .connector {
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      cursor: pointer;
+      transition: stroke-width 0.1s;
+    }
+    
+    .connector:hover {
+      stroke-width: 4;
+    }
+    
+    .color-picker {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    
+    .color-option {
+      width: 25px;
+      height: 25px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    
+    .color-option.selected {
+      border-color: #000;
+      transform: scale(1.1);
+    }
+    
+    .line-options {
+      margin-bottom: 10px;
+    }
+    
+    .debug-info {
+      font-family: monospace;
+      white-space: pre;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    
+    .help-text {
+      background-color: #e8f5e9;
+      padding: 10px;
+      border-left: 4px solid #4caf50;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>CtrlSketch - Connector System</h1>
+  
+  <div class="help-text">
+    <p><strong>Instructions:</strong></p>
+    <ol>
+      <li>Click "Add Point" to create points</li>
+      <li>Click on two points to select them</li>
+      <li>Click "Connect Points" to create a connector between selected points</li>
+      <li>Drag points to move them (connectors will update automatically)</li>
+      <li>Drag the small control points on connectors to adjust the shape</li>
+    </ol>
+  </div>
+  
+  <div class="controls">
+    <button id="addPoint">Add Point</button>
+    <button id="connect">Connect Points</button>
+    <button id="clear">Clear All</button>
+  </div>
+  
+  <div class="line-options">
+    <div>
+      <strong>Line Style:</strong>
+      <label>
+        <input type="radio" name="lineStyle" value="solid" checked> Solid
+      </label>
+      <label>
+        <input type="radio" name="lineStyle" value="dashed"> Dashed
+      </label>
+      <label>
+        <input type="radio" name="lineStyle" value="dotted"> Dotted
+      </label>
+    </div>
+    
+    <div>
+      <strong>Connection Type:</strong>
+      <label>
+        <input type="radio" name="connectionType" value="direct"> Direct
+      </label>
+      <label>
+        <input type="radio" name="connectionType" value="horizontal-first" checked> Horizontal First
+      </label>
+      <label>
+        <input type="radio" name="connectionType" value="vertical-first"> Vertical First
+      </label>
+    </div>
+    
+    <div>
+      <label>
+        <input type="checkbox" id="enableLineJumps" checked> Enable Line Jumps
+      </label>
+    </div>
+  </div>
+  
+  <div class="color-picker">
+    <strong>Line Color:</strong>
+    <div class="color-option" data-color="#f44336" style="background-color: #f44336;"></div>
+    <div class="color-option" data-color="#9c27b0" style="background-color: #9c27b0;"></div>
+    <div class="color-option selected" data-color="#4caf50" style="background-color: #4caf50;"></div>
+    <div class="color-option" data-color="#2196f3" style="background-color: #2196f3;"></div>
+    <div class="color-option" data-color="#ff9800" style="background-color: #ff9800;"></div>
+  </div>
+  
+  <div class="canvas-container">
+    <svg id="canvas">
+      <!-- Points and lines will be added here -->
+    </svg>
+  </div>
+  
+  <div class="debug-info" id="debugInfo"></div>
+  
+  <script>
+    // Get elements
+    const canvas = document.getElementById('canvas');
+    const addPointBtn = document.getElementById('addPoint');
+    const connectBtn = document.getElementById('connect');
+    const clearBtn = document.getElementById('clear');
+    const debugInfo = document.getElementById('debugInfo');
+    
+    // State
+    const points = [];
+    const selectedPoints = [];
+    const lines = [];
+    let pointCounter = 1;
+    let isDragging = false;
+    
+    // Line styles mapping
+    const lineStyles = {
+      'solid': '',
+      'dashed': '10 5',
+      'dotted': '3 3'
+    };
+    
+    // Selected line color
+    let selectedLineColor = '#4caf50';
+    let selectedLineStyle = 'solid';
+    let enableLineJumps = true;
+    
+    // Line intersections
+    let intersections = [];
+    
+    // Event handlers
+    addPointBtn.addEventListener('click', () => {
+      const x = Math.random() * 600 + 50;
+      const y = Math.random() * 400 + 50;
+      createDraggablePoint(x, y);
+    });
+    
+    connectBtn.addEventListener('click', () => {
+      if (selectedPoints.length === 2) {
+        createLine(selectedPoints[0], selectedPoints[1]);
+        
+        // Reset selections
+        selectedPoints.forEach(point => {
+          point.classList.remove('selected');
+        });
+        selectedPoints.length = 0;
+        
+        // Force check for intersections
+        setTimeout(() => {
+          checkIntersections();
+        }, 100);
+        
+        updateDebugInfo();
+      } else {
+        alert("Please select exactly 2 points!");
+      }
+    });
+    
+    clearBtn.addEventListener('click', () => {
+      // Remove all elements
+      while (canvas.firstChild) {
+        canvas.removeChild(canvas.firstChild);
+      }
+      
+      // Reset state
+      points.length = 0;
+      selectedPoints.length = 0;
+      lines.length = 0;
+      intersections = [];
+      pointCounter = 1;
+      
+      updateDebugInfo();
+    });
+    
+    // Set up color pickers
+    document.querySelectorAll('.color-option').forEach(option => {
+      option.addEventListener('click', () => {
+        // Remove selected class from all options
+        document.querySelectorAll('.color-option').forEach(opt => {
+          opt.classList.remove('selected');
+        });
+        
+        // Add selected class to clicked option
+        option.classList.add('selected');
+        
+        // Update selected color
+        selectedLineColor = option.dataset.color;
+      });
+    });
+    
+    // Set up line style radio buttons
+    document.querySelectorAll('input[name="lineStyle"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        selectedLineStyle = radio.value;
+      });
+    });
+    
+    // Line jumps checkbox
+    const lineJumpsCheckbox = document.getElementById('enableLineJumps');
+    lineJumpsCheckbox.addEventListener('change', () => {
+      enableLineJumps = lineJumpsCheckbox.checked;
+      
+      // Update all lines to apply/remove jumps
+      checkIntersections();
+    });
+    
+    // Functions
+    function addPoint(x, y) {
+      // Create SVG circle element
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", x);
+      circle.setAttribute("cy", y);
+      circle.setAttribute("r", 10);
+      circle.setAttribute("id", "point-" + pointCounter++);
+      circle.setAttribute("class", "control-point");
+      
+      // Add click handler
+      circle.addEventListener("click", function(event) {
+        // Check if dragging (to prevent selecting during drag)
+        if (!isDragging) {
+          togglePointSelection(this);
+        }
+      });
+      
+      // Add to canvas and state
+      canvas.appendChild(circle);
+      points.push(circle);
+      
+      updateDebugInfo();
+      return circle;
+    }
+    
+    function togglePointSelection(point) {
+      const index = selectedPoints.indexOf(point);
+      
+      if (index > -1) {
+        // Deselect
+        selectedPoints.splice(index, 1);
+        point.classList.remove('selected');
+      } else {
+        // Only allow 2 selections
+        if (selectedPoints.length >= 2) {
+          selectedPoints[0].classList.remove('selected');
+          selectedPoints.shift();
+        }
+        
+        // Select new point
+        selectedPoints.push(point);
+        point.classList.add('selected');
+      }
+      
+      updateDebugInfo();
+    }
+    
+    function createLine(point1, point2) {
+      // Get coordinates
+      const x1 = parseFloat(point1.getAttribute("cx"));
+      const y1 = parseFloat(point1.getAttribute("cy"));
+      const x2 = parseFloat(point2.getAttribute("cx"));
+      const y2 = parseFloat(point2.getAttribute("cy"));
+      
+      // Create an ID for the new line
+      const lineId = `line-${Date.now()}`;
+      
+      // Create SVG path element
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("fill", "none");
+      path.setAttribute("class", "connector");
+      path.setAttribute("id", lineId);
+      path.setAttribute("stroke", selectedLineColor);
+      path.setAttribute("stroke-width", "3");
+      
+      // Apply line style (dash array)
+      const dashArray = lineStyles[selectedLineStyle];
+      if (dashArray) {
+        path.setAttribute("stroke-dasharray", dashArray);
+      }
+      
+      // Store line properties
+      path.dataset.startX = x1;
+      path.dataset.startY = y1;
+      path.dataset.endX = x2;
+      path.dataset.endY = y2;
+      path.dataset.color = selectedLineColor;
+      path.dataset.style = selectedLineStyle;
+      
+      // Get the selected connection type
+      const connectionType = document.querySelector('input[name="connectionType"]:checked').value;
+      path.dataset.type = connectionType;
+      
+      let pathData = '';
+      let controlPoints = [];
+      
+      if (connectionType === 'direct') {
+        // Direct line
+        pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+        
+      } else if (connectionType === 'horizontal-first') {
+        // Horizontal first, then vertical, then horizontal
+        const midX = (x1 + x2) / 2;
+        pathData = `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
+        
+        // Store the midpoint for later path updates
+        path.dataset.midX = midX;
+        path.dataset.midY = y1;
+        
+        // Create control points at the turns
+        controlPoints.push({
+          x: midX,
+          y: y1,
+          updatePath: function(newX, newY) {
+            // Update stored midpoint
+            path.dataset.midX = newX;
+            
+            return `M ${x1} ${y1} H ${newX} V ${y2} H ${x2}`;
+          }
+        });
+        
+      } else if (connectionType === 'vertical-first') {
+        // Vertical first, then horizontal, then vertical
+        const midY = (y1 + y2) / 2;
+        pathData = `M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`;
+        
+        // Store the midpoint for later path updates
+        path.dataset.midX = x1;
+        path.dataset.midY = midY;
+        
+        // Create control points at the turns
+        controlPoints.push({
+          x: x1,
+          y: midY,
+          updatePath: function(newX, newY) {
+            // Update stored midpoint
+            path.dataset.midY = newY;
+            
+            return `M ${x1} ${y1} V ${newY} H ${x2} V ${y2}`;
+          }
+        });
+      }
+      
+      path.setAttribute("d", pathData);
+      
+      // Insert path at beginning so it's behind points
+      canvas.insertBefore(path, canvas.firstChild);
+      lines.push(path);
+      
+      // Add control points if there are any
+      controlPoints.forEach(cp => {
+        const controlPoint = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        controlPoint.setAttribute("cx", cp.x);
+        controlPoint.setAttribute("cy", cp.y);
+        controlPoint.setAttribute("r", 5);
+        controlPoint.setAttribute("fill", selectedLineColor);
+        controlPoint.setAttribute("cursor", "move");
+        controlPoint.setAttribute("data-line-id", lineId);
+        
+        // Make the control point draggable
+        controlPoint.addEventListener("mousedown", function(e) {
+          e.preventDefault();
+          isDragging = false;
+          
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const initialX = parseFloat(this.getAttribute("cx"));
+          const initialY = parseFloat(this.getAttribute("cy"));
+          
+          function onMouseMove(moveEvent) {
+            isDragging = true;
+            
+            const dx = moveEvent.clientX - startX;
+            const dy = moveEvent.clientY - startY;
+            const newX = initialX + dx;
+            const newY = initialY + dy;
+            
+            // Update control point position
+            controlPoint.setAttribute("cx", newX);
+            controlPoint.setAttribute("cy", newY);
+            
+            // Update path using the control point's update function
+            const newPathData = cp.updatePath(newX, newY);
+            path.setAttribute("d", newPathData);
+            
+            // Update debugging info
+            updateDebugInfo();
+          }
+          
+          function onMouseUp() {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+            
+            // Check for intersections after drag ends
+            if (enableLineJumps) {
+              checkIntersections();
+            }
+            
+            // Reset dragging state after a short delay
+            setTimeout(() => {
+              isDragging = false;
+            }, 10);
+          }
+          
+          document.addEventListener("mousemove", onMouseMove);
+          document.addEventListener("mouseup", onMouseUp);
+        });
+        
+        canvas.appendChild(controlPoint);
+      });
+      
+      // Check for intersections with other lines
+      if (enableLineJumps) {
+        checkIntersections();
+      }
+      
+      updateDebugInfo(`Line created from (${x1},${y1}) to (${x2},${y2})`);
+      return path;
+    }
+    
+    // Function to check for line intersections and add jumps
+    function checkIntersections() {
+      // Clear existing intersection markers
+      document.querySelectorAll('.intersection-jump').forEach(el => el.remove());
+      intersections = [];
+      
+      // Only process if line jumps are enabled
+      if (!enableLineJumps) {
+        return;
+      }
+      
+      // Get all lines
+      const allLines = Array.from(lines);
+      
+      // Check each pair of lines for intersections
+      for (let i = 0; i < allLines.length; i++) {
+        for (let j = i + 1; j < allLines.length; j++) {
+          const lineA = allLines[i];
+          const lineB = allLines[j];
+          
+          // Skip if one of the lines has been removed
+          if (!lineA.parentNode || !lineB.parentNode) continue;
+          
+          const intersection = findIntersection(lineA, lineB);
+          
+          if (intersection) {
+            // Add to list of intersections
+            intersections.push(intersection);
+            
+            // Create a jump at the intersection point
+            createJump(intersection.x, intersection.y, intersection.lineA, intersection.lineB);
+          }
+        }
+      }
+    }
+    
+    // Function to find an intersection between two path segments
+    function findIntersection(lineA, lineB) {
+      const typeA = lineA.dataset.type;
+      const typeB = lineB.dataset.type;
+      
+      // If one is horizontal-first and one is vertical-first
+      if (typeA === 'horizontal-first' && typeB === 'vertical-first') {
+        const midX = parseFloat(lineA.dataset.midX);
+        const midY = parseFloat(lineB.dataset.midY);
+        
+        // Get the y-range of the vertical segment of the horizontal-first line
+        const y1 = parseFloat(lineA.dataset.startY);
+        const y2 = parseFloat(lineA.dataset.endY);
+        const minY = Math.min(y1, y2);
+        const maxY = Math.max(y1, y2);
+        
+        // Get the x-range of the horizontal segment of the vertical-first line
+        const x1 = parseFloat(lineB.dataset.startX);
+        const x2 = parseFloat(lineB.dataset.endX);
+        const minX = Math.min(x1, x2);
+        const maxX = Math.max(x1, x2);
+        
+        // Check if the midpoints are within the respective ranges
+        if (midX >= minX && midX <= maxX && midY >= minY && midY <= maxY) {
+          return { x: midX, y: midY, lineA, lineB };
+        }
+      }
+      
+      // If one is vertical-first and one is horizontal-first (reverse of above)
+      if (typeA === 'vertical-first' && typeB === 'horizontal-first') {
+        return findIntersection(lineB, lineA);
+      }
+      
+      return null;
+    }
+    
+    // Create a visual jump at an intersection
+    function createJump(x, y, lineA, lineB) {
+      // Determine which line to apply the jump to (we'll use the most recently created one)
+      const jumpLine = parseInt(lineA.id.split('-')[1]) > parseInt(lineB.id.split('-')[1]) ? lineA : lineB;
+      
+      // Create a small arc/jump shape
+      const jumpArc = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      jumpArc.setAttribute("class", "intersection-jump");
+      jumpArc.setAttribute("fill", "none");
+      jumpArc.setAttribute("stroke", jumpLine.getAttribute("stroke"));
+      jumpArc.setAttribute("stroke-width", "4");
+      
+      // Apply the same dash style
+      const dashArray = jumpLine.getAttribute("stroke-dasharray");
+      if (dashArray) {
+        jumpArc.setAttribute("stroke-dasharray", dashArray);
+      }
+      
+      // Create an arc path (a small semicircle)
+      const radius = 10;
+      let arcPath = '';
+      
+      // Different arc depending on line type
+      if (jumpLine.dataset.type === 'horizontal-first') {
+        // Arc over a horizontal line
+        arcPath = `M ${x - radius} ${y} A ${radius} ${radius} 0 0 0 ${x + radius} ${y}`;
+      } else if (jumpLine.dataset.type === 'vertical-first') {
+        // Arc around a vertical line
+        arcPath = `M ${x} ${y - radius} A ${radius} ${radius} 0 0 0 ${x} ${y + radius}`;
+      } else {
+        // For direct lines, check which one is more horizontal vs vertical
+        const startX = parseFloat(jumpLine.dataset.startX);
+        const startY = parseFloat(jumpLine.dataset.startY);
+        const endX = parseFloat(jumpLine.dataset.endX);
+        const endY = parseFloat(jumpLine.dataset.endY);
+        
+        const dx = Math.abs(endX - startX);
+        const dy = Math.abs(endY - startY);
+        
+        if (dx > dy) {
+          // More horizontal, draw vertical arc
+          arcPath = `M ${x} ${y - radius} A ${radius} ${radius} 0 0 0 ${x} ${y + radius}`;
+        } else {
+          // More vertical, draw horizontal arc
+          arcPath = `M ${x - radius} ${y} A ${radius} ${radius} 0 0 0 ${x + radius} ${y}`;
+        }
+      }
+      
+      jumpArc.setAttribute("d", arcPath);
+      canvas.appendChild(jumpArc);
+      
+      return jumpArc;
+    }
+    
+    // Function to make a draggable point with connections
+    function createDraggablePoint(x, y) {
+      // Create the point first
+      const point = addPoint(x, y);
+      
+      // Make the point draggable
+      point.setAttribute("cursor", "move");
+      
+      // Add the drag behavior
+      point.addEventListener("mousedown", function(e) {
+        e.preventDefault();
+        isDragging = false;
+        
+        // Get initial positions
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const initialX = parseFloat(point.getAttribute("cx"));
+        const initialY = parseFloat(point.getAttribute("cy"));
+        
+        // Store connected lines
+        const connectedLines = [];
+        
+        // Find all lines connected to this point
+        lines.forEach(line => {
+          const lineStartX = parseFloat(line.dataset.startX);
+          const lineStartY = parseFloat(line.dataset.startY);
+          const lineEndX = parseFloat(line.dataset.endX);
+          const lineEndY = parseFloat(line.dataset.endY);
+          
+          // Check if this point is at either end of the line
+          const pointX = initialX;
+          const pointY = initialY;
+          
+          // Using a threshold to find connections
+          const threshold = 5;
+          
+          const isStart = Math.abs(lineStartX - pointX) < threshold && Math.abs(lineStartY - pointY) < threshold;
+          const isEnd = Math.abs(lineEndX - pointX) < threshold && Math.abs(lineEndY - pointY) < threshold;
+          
+          if (isStart || isEnd) {
+            connectedLines.push({
+              line: line,
+              isStart: isStart
+            });
+          }
+        });
+        
+        function onMouseMove(moveEvent) {
+          // Set dragging flag to true on actual movement
+          if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
+            isDragging = true;
+          }
+          
+          const dx = moveEvent.clientX - startX;
+          const dy = moveEvent.clientY - startY;
+          const newX = initialX + dx;
+          const newY = initialY + dy;
+          
+          // Update point position
+          point.setAttribute("cx", newX);
+          point.setAttribute("cy", newY);
+          
+          // Update all connected lines
+          connectedLines.forEach(({line, isStart}) => {
+            // Get current points
+            const startX = isStart ? newX : parseFloat(line.dataset.startX);
+            const startY = isStart ? newY : parseFloat(line.dataset.startY);
+            const endX = isStart ? parseFloat(line.dataset.endX) : newX;
+            const endY = isStart ? parseFloat(line.dataset.endY) : newY;
+            
+            // Update the data attributes
+            line.dataset.startX = startX;
+            line.dataset.startY = startY;
+            line.dataset.endX = endX;
+            line.dataset.endY = endY;
+            
+            // Update path based on connection type
+            const type = line.dataset.type;
+            let pathData = '';
+            
+            if (type === 'direct') {
+              pathData = `M ${startX} ${startY} L ${endX} ${endY}`;
+            } else if (type === 'horizontal-first') {
+              const midX = parseFloat(line.dataset.midX || (startX + endX) / 2);
+              pathData = `M ${startX} ${startY} H ${midX} V ${endY} H ${endX}`;
+              
+              // Update midpoint if it's a start point being moved
+              if (isStart) {
+                line.dataset.midY = startY;
+              }
+            } else if (type === 'vertical-first') {
+              const midY = parseFloat(line.dataset.midY || (startY + endY) / 2);
+              pathData = `M ${startX} ${startY} V ${midY} H ${endX} V ${endY}`;
+              
+              // Update midpoint if it's a start point being moved
+              if (isStart) {
+                line.dataset.midX = startX;
+              }
+            }
+            
+            // Set the new path
+            line.setAttribute("d", pathData);
+          });
+          
+          // Update debug info
+          updateDebugInfo();
+        }
+        
+        function onMouseUp() {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+          
+          // Check for intersections after drag ends
+          if (enableLineJumps) {
+            checkIntersections();
+          }
+          
+          // Reset dragging state after a short delay to allow click events
+          setTimeout(() => {
+            isDragging = false;
+          }, 10);
+        }
+        
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+      
+      return point;
+    }
+    
+    function updateDebugInfo(message = '') {
+      let info = `Points: ${points.length}\n`;
+      info += `Selected: ${selectedPoints.length}\n`;
+      info += `Lines: ${lines.length}\n\n`;
+      
+      points.forEach(point => {
+        const id = point.getAttribute('id');
+        const x = parseFloat(point.getAttribute('cx'));
+        const y = parseFloat(point.getAttribute('cy'));
+        const isSelected = selectedPoints.includes(point);
+        
+        info += `${id}: (${Math.round(x)}, ${Math.round(y)}) ${isSelected ? '[SELECTED]' : ''}\n`;
+      });
+      
+      if (message) {
+        info += `\n${message}`;
+      }
+      
+      debugInfo.textContent = info;
+    }
+    
+    // Create some initial points for demo
+    createDraggablePoint(150, 100);
+    createDraggablePoint(350, 100);
+    createDraggablePoint(250, 300);
+    createDraggablePoint(450, 300);
+  </script>
+</body>
+</html>
