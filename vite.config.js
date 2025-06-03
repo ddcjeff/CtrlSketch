@@ -1,8 +1,17 @@
 import { defineConfig } from "vite"
 import vue from "@vitejs/plugin-vue"
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+
+// Read version from package.json
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
+const appVersion = pkg.version
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   css: {
     postcss: {
       plugins: [
@@ -13,13 +22,9 @@ export default defineConfig({
   },
   server: {
     hmr: {
-      // Use a different protocol if WebSocket is blocked
       protocol: 'ws',
-      // Explicitly set the host
       host: 'localhost',
-      // Try a different port for WebSocket
       port: 24678,
-      // Increase timeout
       timeout: 120000
     }
   }
