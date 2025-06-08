@@ -98,7 +98,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   const documentName = ref('Untitled'); // Document name
   const documentModified = ref(false); // Document modified flag
   const showSplashScreen = ref(true); // Toggle splash screen
-  const appVersion = ref('1.0.0'); // Application version
+  const appVersion = ref('2.1.0'); // Application version
   const licenseNumber = ref('CS-2023-0001'); // License number
   const clipboard = ref([]); // Clipboard for cut/copy/paste
   const activeTab = ref('Insert'); // Active ribbon tab
