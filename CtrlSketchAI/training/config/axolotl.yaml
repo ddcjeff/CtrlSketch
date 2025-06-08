@@ -1,0 +1,12 @@
+base_model: mistralai/Mistral-7B-v0.1
+dataset_path: ./data/ctrlsketch_lora_trainset.jsonl
+output_dir: ./output
+adapter: lora
+
+load_in_8bit: false
+load_in_4bit: false
+trust_remote_code: true
+
+batch_size: 2
+num_epochs: 3
+prompt_format: alpaca

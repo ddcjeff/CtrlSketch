@@ -4,10 +4,20 @@
       <!-- Home Tab -->
       <template v-if="activeTab === 'Home'">
         <div class="flex gap-4 justify-start overflow-x-auto">
-          <!-- Canvas Tools Section -->
+          <!-- Selection Tools Section -->
           <div class="bg-gray-900 rounded-lg p-2 min-w-[200px]">
             <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Tools</h3>
             <div class="flex gap-1 nowrap">
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tool', value: 'select' })"
+              >
+                <span class="mr-1 text-indigo-400">⬜</span>
+                <span>Select</span>
+                <div class="tooltip">
+                  Select and manipulate objects
+                </div>
+              </button>
               <button 
                 class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
                 @click="$emit('ribbon-action', { type: 'tool', value: 'hand' })"
@@ -57,8 +67,7 @@
               </button>
               <button 
                 class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
-                @click="$emit('ribbon-action', { type: 'clipboard', value: 'copy' }); console.log('Copy button clicked');"
-                id="copy-button"
+                @click="$emit('ribbon-action', { type: 'clipboard', value: 'copy' })"
               >
                 <span class="mr-1 text-indigo-400">C</span>
                 <span>Copy</span>

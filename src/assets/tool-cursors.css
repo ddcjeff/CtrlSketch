@@ -1,0 +1,113 @@
+/* Tool-specific cursor styles */
+
+/* Default cursor */
+.cursor-default {
+  cursor: default;
+}
+
+/* Selection tool */
+.cursor-select {
+  cursor: pointer;
+}
+
+/* Rectangle tool */
+.cursor-rectangle {
+  cursor: crosshair;
+}
+
+/* Ellipse tool */
+.cursor-ellipse {
+  cursor: crosshair;
+}
+
+/* Line tool */
+.cursor-line {
+  cursor: crosshair;
+}
+
+/* Pen tool */
+.cursor-pen {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path><path d="M2 2l7.586 7.586"></path><circle cx="11" cy="11" r="2"></circle></svg>'), auto;
+}
+
+/* Text tool */
+.cursor-text {
+  cursor: text;
+}
+
+/* Hand tool (pan) */
+.cursor-hand {
+  cursor: grab;
+}
+
+/* Hand tool when active (panning) */
+.cursor-hand-active {
+  cursor: grabbing;
+}
+
+/* Zoom tool */
+.cursor-zoom-in {
+  cursor: zoom-in;
+}
+
+.cursor-zoom-out {
+  cursor: zoom-out;
+}
+
+/* Eraser tool */
+.cursor-eraser {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16C2.5 15.5 2.5 14.5 3 14L13 4C13.5 3.5 14.5 3.5 15 4L21 10C21.5 10.5 21.5 11.5 21 12L11 22"></path></svg>'), auto;
+}
+
+/* Image tool */
+.cursor-image {
+  cursor: cell;
+}
+
+/* Shape tool */
+.cursor-shape {
+  cursor: crosshair;
+}
+
+/* Polygon tool */
+.cursor-polygon {
+  cursor: crosshair;
+}
+
+/* Resize cursors */
+.cursor-resize-nw {
+  cursor: nw-resize;
+}
+
+.cursor-resize-n {
+  cursor: n-resize;
+}
+
+.cursor-resize-ne {
+  cursor: ne-resize;
+}
+
+.cursor-resize-e {
+  cursor: e-resize;
+}
+
+.cursor-resize-se {
+  cursor: se-resize;
+}
+
+.cursor-resize-s {
+  cursor: s-resize;
+}
+
+.cursor-resize-sw {
+  cursor: sw-resize;
+}
+
+.cursor-resize-w {
+  cursor: w-resize;
+}
+
+/* Rotate cursor */
+.cursor-rotate {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>'), auto;
+}

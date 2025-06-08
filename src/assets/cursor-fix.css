@@ -1,0 +1,17 @@
+/* Emergency cursor fix */
+.styled-canvas {
+  cursor: default !important;
+}
+
+.cursor-hand, .cursor-hand-active {
+  cursor: default !important;
+}
+
+/* Only apply hand cursor when explicitly in hand mode */
+.force-hand-cursor {
+  cursor: grab !important;
+}
+
+.force-hand-cursor.active {
+  cursor: grabbing !important;
+}

@@ -23,8 +23,6 @@
         :show-shape-library="store.showShapeLibrary"
         data-glossy-target="ribbon"
       />
-      
-
 
       <div class="flex flex-1 overflow-hidden h-[calc(100vh-7rem)] relative">
         <!-- Shape Library Panel -->
@@ -364,10 +362,6 @@ export default {
   mounted() {
     window.addEventListener('keydown', this.handleGlobalKeyDown);
     document.addEventListener('keydown', this.handleDeleteKey);
-    
-    // Always set the default tool to 'select' when the application starts
-    this.store.setTool('select');
-    
     const savedData = this.store.loadAutoSavedData();
     if (savedData) {
       this.showNotification({
@@ -393,27 +387,10 @@ export default {
   if (type === 'tab') {
     this.store.setActiveTab(value);
   } else if (type === 'file') {
-    // Map menu action values to the correct function names
-    const functionMap = {
-      'new': 'clearCanvas',
-      'open': 'openFile',
-      'save': 'saveFile',
-      'saveAs': 'saveFileAs',
-      'exportPdf': 'exportAsPDF',
-      'exportPng': 'exportAsPNG',
-      'exportSvg': 'exportAsSVG'
-    };
-    
-    const functionName = functionMap[value];
-    if (!functionName) {
-      console.error(`No function mapping found for menu action: ${value}`);
-      return;
-    }
-    
-    if (['exportAsPDF', 'exportAsPNG'].includes(functionName)) {
-      this.store[functionName](this.$refs.canvas?.$refs.canvas);
+    if (['exportPdf', 'exportPng'].includes(value)) {
+      this.store[value](this.$refs.canvas?.$refs.canvas);
     } else {
-      this.store[functionName]();
+      this.store[value]();
     }
   } else if (type === 'help') {
     if (value === 'keyboardShortcuts') {
@@ -433,10 +410,8 @@ export default {
 },
     
     handleRibbonAction({ type, value }) {
-      console.log('Ribbon action:', type, value);
       switch (type) {
         case 'tool':
-          console.log('Setting tool to:', value);
           this.store.setTool(value);
           break;
         case 'style':
@@ -447,7 +422,6 @@ export default {
           else if (value === 'layers') this.store.toggleLayersPanel();
           break;
         case 'clipboard':
-          console.log('Clipboard action:', value);
           if (value === 'cut') this.store.cutShapes();
           else if (value === 'copy') this.store.copyShapes();
           else if (value === 'paste') this.store.pasteShapes();
@@ -496,15 +470,6 @@ export default {
           document.activeElement.isContentEditable)
       )
         return;
-        
-      // Handle ESC key globally to ensure it always works
-      if (e.key === 'Escape' || e.code === 'Escape') {
-        console.log('Global ESC key handler - forcing select tool');
-        this.store.setTool('select');
-        e.preventDefault();
-        return;
-      }
-        
       if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
         this.store.undo();
         e.preventDefault();
@@ -548,8 +513,6 @@ export default {
         }
       }
     },
-    
-
     zoomCanvas(factor) {
       if (this.$refs.canvas) {
         this.$refs.canvas.zoomTarget *= factor;

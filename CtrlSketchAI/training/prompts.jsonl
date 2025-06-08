@@ -1,0 +1,3 @@
+
+{"prompt": "How does CtrlSketch handle shape dragging?", "response": "CtrlSketch uses mouse event handlers on shapes to capture 'mousedown', 'mousemove', and 'mouseup'. These update the shape's x/y position in the canvasStore and re-render the position."}
+{"prompt": "Write a Vue component that represents a draggable shape in CtrlSketch.", "response": "See code example in DrawingCanvas.vue."}

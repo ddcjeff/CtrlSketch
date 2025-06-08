@@ -1,14 +1,17 @@
 <template>
   <div ref="wrapper" class="wrapper" @dblclick="resetZoom">
-
+    <div class="import-controls" style="position: absolute; top: 10px; left: 10px; z-index: 10;">
+      <label for="svg-import">Import SVG:</label>
+      <input id="svg-import" name="svg-import" type="file" accept=".svg" @change="handleFileImport($event, 'svg')" />
+      
+      <label for="json-import">Import JSON:</label>
+      <input id="json-import" name="json-import" type="file" accept=".json" @change="handleFileImport($event, 'json')" />
+      
+      <button id="add-rectangle" @click="addLibraryShape({ type: 'rectangle', fill: '#ff0000' })">Add Red Rectangle</button>
+    </div>
     <canvas
       ref="canvas"
-      :class="[
-        'styled-canvas', 
-        getCursorClass(),
-        tool === 'hand' ? 'force-hand-cursor' : '',
-        (tool === 'hand' && isDragging) ? 'active' : ''
-      ]"
+      :class="['styled-canvas', getCursorClass()]"
       :width="canvasWidth"
       :height="canvasHeight"
       @wheel.prevent="handleWheel"
@@ -115,7 +118,6 @@ export default {
       default: ''
     }
   },
-
   data() {
     return {
       ctx: null,
@@ -131,7 +133,6 @@ export default {
       isDragging: false,
       isResizing: false,
       isRotating: false,
-      isDrawingTool: false, // Flag to track if we're using a drawing tool
       startX: 0,
       startY: 0,
       currentShape: null,
@@ -175,7 +176,7 @@ export default {
       },
       showDebugOverlay: false,
       debugInfo: {
-        position: { x: 0, y: 0 }, // Will be centered in toggleDebugOverlay
+        position: { x: 10, y: 10 },
         size: { width: 400, height: 400 },
         isDragging: false,
         dragStart: { x: 0, y: 0 }
@@ -189,14 +190,6 @@ export default {
         console.log('selectedShapes prop changed:', newVal.length);
         this.localSelectedShapes = [...newVal];
         this.render();
-      }
-    },
-    tool: {
-      immediate: true,
-      handler(newVal, oldVal) {
-        console.log('Tool changed from', oldVal, 'to', newVal);
-        // If the tool is not 'select' or 'hand', we'll need to emit an event when the drawing is complete
-        this.isDrawingTool = !['select', 'hand', ''].includes(newVal);
       }
     },
     shapes: {
@@ -296,12 +289,7 @@ export default {
       canvas.focus();
       setTimeout(() => {
         this.centerCanvas('reset');
-        
-        // Ensure we start in select mode
-        console.log('Canvas mounted, ensuring select mode is active');
-        this.forceSelectMode();
       }, 100);
-      
       window.addEventListener("resize", this.centerCanvas);
       canvas.addEventListener("keydown", this.handleKeyDown, true);
       document.addEventListener("keydown", this.handleKeyDown);
@@ -339,9 +327,6 @@ export default {
      * @returns {string} CSS class for the cursor
      */
     getCursorClass() {
-      // Log the current tool for debugging
-      console.log('Getting cursor class for tool:', this.tool);
-      
       // If we're resizing, return the appropriate resize cursor
       if (this.isResizing && this.resizeHandle) {
         return `cursor-resize-${this.resizeHandle}`;
@@ -355,12 +340,6 @@ export default {
       // If we're dragging with the hand tool, return the active hand cursor
       if (this.isDragging && this.tool === 'hand') {
         return 'cursor-hand-active';
-      }
-      
-      // If tool is null, undefined, or empty string, default to select
-      if (!this.tool) {
-        console.log('Tool is empty, defaulting to select cursor');
-        return 'cursor-select';
       }
       
       // Return cursor based on the current tool
@@ -392,8 +371,7 @@ export default {
         case 'polygon':
           return 'cursor-polygon';
         default:
-          console.log('Unknown tool:', this.tool, 'defaulting to select cursor');
-          return 'cursor-select'; // Default to select cursor for unknown tools
+          return 'cursor-default';
       }
     },
     
@@ -766,9 +744,6 @@ export default {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         
-        console.log('Mouse down at screen coords:', x, y);
-        console.log('Debug overlay position:', this.debugInfo.position);
-        
         // Simple hit test directly here
         const { x: overlayX, y: overlayY } = this.debugInfo.position;
         const { width, height } = this.debugInfo.size;
@@ -781,11 +756,8 @@ export default {
           y >= overlayY && 
           y <= overlayY + height
         ) {
-          console.log('Hit detected on debug overlay');
-          
           // If clicking on the header, start dragging
           if (y <= overlayY + headerHeight) {
-            console.log('Starting drag on debug overlay header');
             this.debugInfo.isDragging = true;
             this.debugInfo.dragStart = {
               x: x - this.debugInfo.position.x,
@@ -814,7 +786,7 @@ export default {
       const snappedX = snappedPoint.x;
       const snappedY = snappedPoint.y;
       console.log('Mouse down at:', x, y, 'Snapped:', snappedX, snappedY);
-      if (this.tool && this.tool !== 'select' && this.tool !== 'hand') {
+      if (this.tool) {
         this.isDrawing = true;
         this.currentShape = {
           id: Date.now(),
@@ -942,23 +914,17 @@ export default {
       
       // Check if we're dragging the debug overlay
       if (this.debugInfo.isDragging) {
-        console.log('Dragging debug overlay, mouse at:', canvasX, canvasY);
-        
         // Update position
         this.debugInfo.position = {
           x: canvasX - this.debugInfo.dragStart.x,
           y: canvasY - this.debugInfo.dragStart.y
         };
         
-        console.log('New debug overlay position:', this.debugInfo.position);
-        
         // Keep overlay within canvas bounds
         this.debugInfo.position.x = Math.max(0, Math.min(this.debugInfo.position.x, 
           this.canvasWidth - this.debugInfo.size.width));
         this.debugInfo.position.y = Math.max(0, Math.min(this.debugInfo.position.y, 
           this.canvasHeight - this.debugInfo.size.height));
-        
-        console.log('Bounded debug overlay position:', this.debugInfo.position);
         
         this.render();
         e.stopPropagation();
@@ -1053,23 +1019,15 @@ export default {
             if (movedShape) {
               // Create a new object with updated properties
               if (s.type === 'image') {
-                // For image shapes, preserve all properties including the image object
-                // This prevents the image from being reloaded during dragging
-                const updatedImageShape = {
+                // For image shapes, only update position and essential properties
+                return {
                   ...s,
                   x: movedShape.x,
                   y: movedShape.y,
                   selectable: true,
                   movable: true,
-                  rotation: movedShape.rotation || 0,
-                  // Preserve the image object to prevent reloading
-                  image: s.image,
-                  // Preserve transparency flags
-                  _isFillTransparent: s._isFillTransparent,
-                  _isStrokeTransparent: s._isStrokeTransparent
+                  rotation: movedShape.rotation || 0
                 };
-                console.log('Updated image shape during drag:', updatedImageShape.id);
-                return updatedImageShape;
               } else {
                 // For all other shapes, include style properties
                 return { 
@@ -1212,10 +1170,6 @@ export default {
           const newShape = { ...this.currentShape };
           const updatedShapes = [...this.shapes, newShape];
           this.$emit('shape-added', updatedShapes);
-          
-          // Always switch back to select mode after drawing a shape
-          console.log('Drawing complete, switching back to select mode');
-          this.forceSelectMode();
         }
         this.currentShape = null;
         this.isDrawing = false;
@@ -1431,41 +1385,14 @@ export default {
           isResizing: this.isResizing,
           isRotating: this.isRotating,
           hasSelectionStart: !!this.selectionStart,
-          selectedShapesCount: this.localSelectedShapes.length,
-          currentTool: this.tool
+          selectedShapesCount: this.localSelectedShapes.length
         });
         let actionTaken = false;
-        
-        // Only emit events - don't try to modify the prop directly
-        this.$emit('update:tool', 'select');
-        this.$emit('tool-change', 'select');
-        
-        // Directly manipulate the canvas element's class
-        const canvas = this.$refs.canvas;
-        if (canvas) {
-          // Remove any cursor classes
-          canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'force-hand-cursor', 'active');
-          
-          // Add the select cursor class
-          canvas.classList.add('cursor-select');
-          
-          console.log('Canvas classes after ESC key:', canvas.className);
-        }
-        
-        // If we have selected shapes, deselect them
-        if (this.localSelectedShapes.length > 0) {
-          console.log('Deselecting shapes on ESC key');
-          this.localSelectedShapes = [];
-          this.$emit('shapes-selected', []);
-          actionTaken = true;
-        }
-        
-        actionTaken = true;
-        
-        if (this.isDrawing) {
+        if (this.isDrawing || this.tool) {
           this.isDrawing = false;
           this.currentShape = null;
-          console.log('Drawing canceled');
+          this.$emit('tool-change', null);
+          console.log('Drawing canceled, tool deactivated');
           actionTaken = true;
         }
         if (this.isDragging) {
@@ -1817,104 +1744,17 @@ export default {
       // Toggle debug overlay
       this.showDebugOverlay = !this.showDebugOverlay;
       
-      // If we're showing the debug overlay, center it on the canvas
-      if (this.showDebugOverlay) {
-        // Center the debug overlay
-        const centerX = Math.round((this.canvasWidth - this.debugInfo.size.width) / 2);
-        const centerY = Math.round((this.canvasHeight - this.debugInfo.size.height) / 2);
-        
-        this.debugInfo.position = {
-          x: centerX,
-          y: centerY
-        };
-        
-        // Reset the drag state
-        this.debugInfo.isDragging = false;
-        this.debugInfo.dragStart = { x: 0, y: 0 };
-        
-        console.log('Debug overlay centered at:', this.debugInfo.position, 'Canvas size:', this.canvasWidth, this.canvasHeight);
-      }
-    },
-    
-    /**
-     * Force the tool to select mode
-     * This is a utility method to ensure the tool is properly reset
-     */
-    forceSelectMode() {
-      console.log('Forcing select mode');
-      
-      // Only emit events - don't try to modify the prop directly
-      this.$emit('update:tool', 'select');
-      this.$emit('tool-change', 'select');
-      
-      // Directly manipulate the canvas element's class
-      const canvas = this.$refs.canvas;
-      if (canvas) {
-        // Remove any cursor classes
-        canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'force-hand-cursor', 'active');
-        
-        // Add the select cursor class
-        canvas.classList.add('cursor-select');
-        
-        console.log('Canvas classes after direct manipulation:', canvas.className);
-      }
+      console.log('Debug overlay toggled:', this.showDebugOverlay);
       
       // Reset any active drawing or selection
       this.isDrawing = false;
       this.isDragging = false;
       this.isResizing = false;
-      this.isRotating = false;
-      this.currentShape = null;
-      this.selectionStart = null;
-      
-      // Force a render to update the cursor
-      this.render();
       
       // If we're showing the debug overlay, test shape movement
       if (this.showDebugOverlay) {
         this.testShapeMovement();
       }
-    },
-    
-    /**
-     * Direct method to force select mode with direct DOM manipulation
-     * This is a more aggressive approach to ensure the cursor changes
-     */
-    forceSelectModeDirectly() {
-      console.log('DIRECTLY forcing select mode');
-      
-      // Only emit events - don't try to modify the prop directly
-      this.$emit('update:tool', 'select');
-      this.$emit('tool-change', 'select');
-      
-      // Directly manipulate the canvas element's class
-      const canvas = this.$refs.canvas;
-      if (canvas) {
-        // Remove any cursor classes
-        canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'cursor-rectangle', 
-          'cursor-ellipse', 'cursor-line', 'cursor-pen', 'cursor-text', 'cursor-zoom-in', 
-          'cursor-zoom-out', 'cursor-eraser', 'cursor-image', 'cursor-shape', 'cursor-polygon');
-        
-        // Add the select cursor class
-        canvas.classList.add('cursor-select');
-        
-        console.log('Canvas classes after direct manipulation:', canvas.className);
-      }
-      
-      // Reset any active states
-      this.isDrawing = false;
-      this.isDragging = false;
-      this.isResizing = false;
-      this.isRotating = false;
-      this.currentShape = null;
-      this.selectionStart = null;
-      this.resizeHandle = null;
-      
-      // Force a render
-      this.render();
-      
-      // Log the current state
-      console.log('Current tool after direct force:', this.tool);
     },
     
     /**
@@ -2837,9 +2677,9 @@ export default {
             ctx.beginPath();
             ctx.lineWidth = shape.lineWidth / this.zoom;
             // Handle empty or invalid stroke values
-            ctx.strokeStyle = this.safeColor(shape.stroke, '#00000000', shape, false);
+            ctx.strokeStyle = this.safeColor(shape.stroke, '#00000000');
             // Handle empty or invalid fill values
-            ctx.fillStyle = this.safeColor(shape.fill, '#00000000', shape, true);
+            ctx.fillStyle = this.safeColor(shape.fill, '#00000000');
             if (shape.lineStyle) {
               this.applyLineStyle(ctx, shape.lineStyle, shape.lineWidth / this.zoom);
             }
@@ -2878,7 +2718,7 @@ export default {
             ctx.textAlign = shape.textAlign || 'left';
             ctx.textBaseline = 'top';
             // Handle empty or invalid fill values for text
-            ctx.fillStyle = this.safeColor(shape.fill, '#000000', shape, true); // Default to black for text
+            ctx.fillStyle = this.safeColor(shape.fill, '#000000'); // Default to black for text
             ctx.fillText(shape.text, shape.x, shape.y);
             if (shape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(shape.text).width;
@@ -3173,9 +3013,9 @@ export default {
         } else {
           ctx.lineWidth = this.currentShape.lineWidth / this.zoom;
           // Handle empty or invalid stroke values
-          ctx.strokeStyle = this.safeColor(this.currentShape.stroke, '#00000000', this.currentShape, false);
+          ctx.strokeStyle = this.safeColor(this.currentShape.stroke, '#00000000');
           // Handle empty or invalid fill values
-          ctx.fillStyle = this.safeColor(this.currentShape.fill, '#00000000', this.currentShape, true);
+          ctx.fillStyle = this.safeColor(this.currentShape.fill, '#00000000');
           if (this.currentShape.lineStyle) {
             this.applyLineStyle(ctx, this.currentShape.lineStyle, this.currentShape.lineWidth / this.zoom);
           }
@@ -3212,7 +3052,7 @@ export default {
             ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
             ctx.textAlign = this.currentShape.textAlign || 'left';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = this.safeColor(this.currentShape.fill, '#000000', this.currentShape, true); // Default to black for text
+            ctx.fillStyle = this.safeColor(this.currentShape.fill, '#000000'); // Default to black for text
             ctx.fillText(this.currentShape.text, this.currentShape.x, this.currentShape.y);
             if (this.currentShape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(this.currentShape.text).width;
@@ -3359,13 +3199,11 @@ export default {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           
           // Get debug overlay position and size
-          const x = Math.round(this.debugInfo.position.x);
-          const y = Math.round(this.debugInfo.position.y);
+          const x = this.debugInfo.position.x;
+          const y = this.debugInfo.position.y;
           const width = this.debugInfo.size.width;
           const height = this.debugInfo.size.height;
           const headerHeight = 30;
-          
-          console.log('Debug overlay drawing at exact position:', x, y, 'with size:', width, height);
           
           // Draw semi-transparent background
           ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -3465,21 +3303,9 @@ export default {
      * Safely handles color values, converting 'transparent' to a valid rgba format
      * @param {string|null} color - The color value to process
      * @param {string} defaultColor - The default color to use if the input is invalid
-     * @param {Object} shape - The shape object that may contain _isTransparent flag
      * @returns {string} - A valid color string
      */
-    safeColor(color, defaultColor = 'rgba(0,0,0,0)', shape = null, isFill = true) {
-      // Check if the shape has the appropriate transparency flag set
-      if (shape) {
-        if (isFill && shape._isFillTransparent === true) {
-          console.log('Using transparent fill for shape:', shape.id);
-          return 'rgba(0,0,0,0)';
-        } else if (!isFill && shape._isStrokeTransparent === true) {
-          console.log('Using transparent stroke for shape:', shape.id);
-          return 'rgba(0,0,0,0)';
-        }
-      }
-      
+    safeColor(color, defaultColor = 'rgba(0,0,0,0)') {
       // If color is null, undefined, empty string, or 'transparent', return the default color
       if (color === null || color === undefined || color === '' || color === 'transparent') {
         return defaultColor;

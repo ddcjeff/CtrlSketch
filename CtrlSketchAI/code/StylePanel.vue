@@ -306,15 +306,7 @@ export default {
          shapeCopy.fill === 'rgba(255,255,255,0)' || 
          shapeCopy.fill === '#00000000');
       
-      if (isCurrentlyTransparent) {
-        shapeCopy.fill = '#ffffff';
-        shapeCopy._isFillTransparent = false;
-        console.log('Setting fill to opaque for shape:', shapeCopy.id);
-      } else {
-        shapeCopy.fill = '#000000';
-        shapeCopy._isFillTransparent = true;
-        console.log('Setting fill to transparent for shape:', shapeCopy.id);
-      }
+      shapeCopy.fill = isCurrentlyTransparent ? '#ffffff' : 'rgba(255,255,255,0)';
       this.updateShape(shapeCopy);
     },
     
@@ -328,15 +320,7 @@ export default {
          shapeCopy.stroke === 'rgba(255,255,255,0)' || 
          shapeCopy.stroke === '#00000000');
       
-      if (isCurrentlyTransparent) {
-        shapeCopy.stroke = '#000000';
-        shapeCopy._isStrokeTransparent = false;
-        console.log('Setting stroke to opaque for shape:', shapeCopy.id);
-      } else {
-        shapeCopy.stroke = '#000000';
-        shapeCopy._isStrokeTransparent = true;
-        console.log('Setting stroke to transparent for shape:', shapeCopy.id);
-      }
+      shapeCopy.stroke = isCurrentlyTransparent ? '#000000' : 'rgba(0,0,0,0)';
       this.updateShape(shapeCopy);
     }
   }
