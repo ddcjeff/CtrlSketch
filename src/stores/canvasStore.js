@@ -1021,7 +1021,30 @@ function setActiveTab(tab) {
   function applyPartProperties(properties) {
     if (pendingShapeData.value) {
       createShapeFromLibrary({ clientX: 400, clientY: 300 }, properties);
+    } else if (selectedShapes.value.length > 0) {
+      // Apply part properties to the selected shape
+      const shapeId = selectedShapes.value[0];
+      const shapeIndex = shapes.value.findIndex(s => s.id === shapeId);
+      
+      if (shapeIndex !== -1) {
+        // Create a copy of the shape
+        const updatedShape = { ...shapes.value[shapeIndex] };
+        
+        // Add part properties to the shape
+        updatedShape.partProperties = { ...properties };
+        
+        // Update the shape in the shapes array
+        shapes.value.splice(shapeIndex, 1, updatedShape);
+        
+        // Add to history
+        addToHistory({
+          type: 'update',
+          shapes: [updatedShape],
+          oldShapes: [shapes.value[shapeIndex]]
+        });
+      }
     }
+    
     showPartPropertiesDialog.value = false;
     pendingShapeData.value = null;
   }
@@ -2076,6 +2099,9 @@ function setActiveTab(tab) {
     selectedShapes,
     layers,
     activeLayerId,
+    
+    // Getter for selected shapes
+    getSelectedShapes: () => shapes.value.filter(shape => selectedShapes.value.includes(shape.id)),
     pages,
     activePageId,
     currentTool,

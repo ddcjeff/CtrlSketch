@@ -18,8 +18,18 @@
       @click="handleClick"
       @dblclick="handleDoubleClick"
       @keydown="handleKeyDown"
+      @contextmenu.prevent="handleContextMenu"
       tabindex="0"
     ></canvas>
+    
+    <!-- Shape Context Menu -->
+    <ShapeContextMenu
+      :show="showContextMenu"
+      :position="contextMenuPosition"
+      :selected-shapes="localSelectedShapes"
+      @action="handleContextMenuAction"
+      @close="showContextMenu = false"
+    />
     <Rulers
       v-if="showRulers"
       :show-rulers="showRulers"
@@ -71,10 +81,11 @@
 
 <script>
 import Rulers from './Rulers.vue'
+import ShapeContextMenu from './ShapeContextMenu.vue'
 
 export default {
   name: "CanvasZoomGrid",
-  components: { Rulers },
+  components: { Rulers, ShapeContextMenu },
   props: {
     tool: String,
     styles: Object,
@@ -174,6 +185,11 @@ export default {
         peakRenderTime: 0
       },
       showDebugOverlay: false,
+      
+      // Context menu
+      showContextMenu: false,
+      contextMenuPosition: { x: 0, y: 0 },
+      
       debugInfo: {
         position: { x: 0, y: 0 }, // Will be centered in toggleDebugOverlay
         size: { width: 400, height: 400 },
@@ -3712,6 +3728,58 @@ export default {
         case 'solid':
         default:
           ctx.setLineDash([]);
+          break;
+      }
+    },
+    
+    // Context Menu Methods
+    handleContextMenu(e) {
+      // Get the mouse position relative to the canvas
+      const rect = this.$refs.canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      // Set the context menu position
+      this.contextMenuPosition = { x, y };
+      this.showContextMenu = true;
+      
+      // If no shapes are selected, try to select a shape at the click position
+      if (this.localSelectedShapes.length === 0) {
+        const worldPos = this.screenToWorld(x, y);
+        const shape = this.getShapeAtPosition(worldPos.x, worldPos.y);
+        if (shape) {
+          this.selectShape(shape);
+        }
+      }
+    },
+    
+    handleContextMenuAction(action) {
+      console.log('Context menu action:', action);
+      
+      switch (action.type) {
+        case 'cut':
+          this.$emit('cut-shapes', this.localSelectedShapes);
+          break;
+        case 'copy':
+          this.$emit('copy-shapes', this.localSelectedShapes);
+          break;
+        case 'paste':
+          this.$emit('paste-shapes', { x: this.cursorX, y: this.cursorY });
+          break;
+        case 'delete':
+          this.$emit('delete-shapes', this.localSelectedShapes);
+          break;
+        case 'duplicate':
+          this.$emit('duplicate-shapes', this.localSelectedShapes);
+          break;
+        case 'bringToFront':
+          this.$emit('bring-to-front', this.localSelectedShapes);
+          break;
+        case 'sendToBack':
+          this.$emit('send-to-back', this.localSelectedShapes);
+          break;
+        case 'makeShapePart':
+          this.$emit('make-shape-part', this.localSelectedShapes);
           break;
       }
     }

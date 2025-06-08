@@ -443,6 +443,16 @@
                   Generate Bill of Materials
                 </div>
               </button>
+              <button 
+                class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
+                @click="$emit('ribbon-action', { type: 'tools', value: 'makeShapePart' })"
+              >
+                <span class="mr-1 text-indigo-400">🔧</span>
+                <span>Make Shape a Part</span>
+                <div class="tooltip">
+                  Convert selected shape to a BOM part
+                </div>
+              </button>
             </div>
           </div>
         </div>

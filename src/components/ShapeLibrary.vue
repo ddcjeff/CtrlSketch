@@ -37,11 +37,21 @@
         placeholder="Search shapes..." 
         class="flex-1 bg-gray-700 text-white text-sm rounded-md border border-gray-600 px-2 py-1"
       />
-      <button @click="showShapeActions = !showShapeActions" class="ml-2 text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-        </svg>
-      </button>
+      <div class="flex items-center">
+        <!-- Direct import button -->
+        <button @click="importShape" class="ml-2 text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700" title="Import Shape">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+        </button>
+        
+        <!-- More actions button -->
+        <button @click="showShapeActions = !showShapeActions" class="ml-1 text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700" title="More Actions">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+          </svg>
+        </button>
+      </div>
       
       <!-- Shape actions dropdown -->
       <div v-if="showShapeActions" class="absolute right-4 top-28 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
@@ -69,9 +79,17 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
         </svg>
         <p>No shapes found in this library.</p>
-        <button @click="showShapeActions = true" class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white text-sm">
-          Add Shapes
-        </button>
+        <div class="flex justify-center mt-2 space-x-2">
+          <button @click="importShape" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-white text-sm flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
+            </svg>
+            Import Shape
+          </button>
+          <button @click="showShapeActions = true" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-white text-sm">
+            More Options
+          </button>
+        </div>
       </div>
       <div v-else class="grid grid-cols-2 gap-3">
         <div 
@@ -283,7 +301,7 @@
     <input 
       type="file" 
       ref="fileInput" 
-      style="display: none" 
+      style="position: absolute; left: -9999px;" 
       accept=".svg,.png,.jpg,.jpeg,.json"
       @change="handleFileImport"
     />
@@ -471,6 +489,13 @@ export default {
     // Ensure we have default shapes
     this.ensureDefaultShapes();
     
+    // Force regenerate thumbnails for all shapes
+    console.log('Forcing thumbnail regeneration for all shapes');
+    this.shapes.forEach(shape => {
+      // Clear existing thumbnails to force regeneration
+      shape.thumbnail = null;
+    });
+    
     // Generate thumbnails for all shapes
     this.generateThumbnails();
     
@@ -478,6 +503,11 @@ export default {
     console.log('Shape Library loaded with', this.shapes.length, 'shapes');
     this.shapes.forEach(shape => {
       console.log(`- ${shape.name} (${shape.id}): ${shape.thumbnail ? 'Has thumbnail' : 'No thumbnail'}`);
+    });
+    
+    // Notify when ready
+    this.$nextTick(() => {
+      console.log('Shape library component fully mounted');
     });
   },
   beforeUnmount() {
@@ -569,8 +599,29 @@ export default {
     
     // Shape management
     importShape() {
+      console.log('importShape called');
       this.showShapeActions = false;
+      
+      // Check if fileInput ref exists
+      if (!this.$refs.fileInput) {
+        console.error('fileInput ref not found');
+        this.$emit('notification', {
+          type: 'error',
+          message: 'Could not open file dialog',
+          duration: 3000
+        });
+        return;
+      }
+      
+      console.log('Clicking file input');
       this.$refs.fileInput.click();
+      
+      // Notify user
+      this.$emit('notification', {
+        type: 'info',
+        message: 'Select a file to import (.svg, .png, .jpg, or .json)',
+        duration: 3000
+      });
     },
     
     handleFileImport(event) {
@@ -1734,6 +1785,8 @@ export default {
      */
     generateShapeThumbnail(shapeData) {
       try {
+        console.log('Generating thumbnail for shape data:', JSON.stringify(shapeData).substring(0, 100) + '...');
+        
         if (!shapeData || typeof shapeData !== 'object') {
           console.warn('Invalid shape data for thumbnail generation:', shapeData);
           return this.generateDefaultThumbnail('Invalid');
@@ -1788,11 +1841,22 @@ export default {
             <path d="M${padding+10},${padding+10} h${innerSize-20} v${innerSize-20} h-${innerSize-20} z M${padding+15},${padding+25} a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 M${padding+10},${padding+innerSize-10} l${innerSize/3},-${innerSize/3} l${innerSize/4},${innerSize/5} l${innerSize/3},-${innerSize/2} l${innerSize/8},${innerSize/1.5}" stroke="#666" fill="none" stroke-width="2" />
             <text x="${size / 2}" y="${size - padding - 5}" font-family="Arial" font-size="10" fill="#666" text-anchor="middle">Image</text>
           `;
+        } else if (shapeData.type === 'svg' && shapeData.content) {
+          // For SVG content, create a simple frame around it
+          return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeData.content)}`;
+        } else if (shapeData.shapes && Array.isArray(shapeData.shapes)) {
+          // For shape collections/groups
+          shapeSvg = `
+            <rect x="${padding}" y="${padding}" width="${innerSize}" height="${innerSize}" fill="#f0f0f0" stroke="#ccc" stroke-width="1" />
+            <text x="${size / 2}" y="${size / 2}" font-family="Arial" font-size="12" fill="#666" text-anchor="middle" dominant-baseline="middle">Group (${shapeData.shapes.length})</text>
+          `;
         } else {
           // Default placeholder
+          console.log('Using default placeholder for shape type:', shapeData.type);
           shapeSvg = `
             <rect x="${padding}" y="${padding}" width="${innerSize}" height="${innerSize}" fill="#f0f0f0" stroke="#ccc" stroke-width="1" />
             <text x="${size / 2}" y="${size / 2}" font-family="Arial" font-size="12" fill="#666" text-anchor="middle" dominant-baseline="middle">Shape</text>
+            <text x="${size / 2}" y="${size / 2 + 15}" font-family="Arial" font-size="10" fill="#666" text-anchor="middle" dominant-baseline="middle">${shapeData.type || 'Unknown'}</text>
           `;
         }
         

@@ -85,6 +85,7 @@
             @undo-requested="store.undo"
             @redo-requested="store.redo"
             @toggle-snap-grid="store.toggleSnapToGrid"
+            @make-shape-part="handleMakeShapePart"
             @tool-change="store.setTool($event)"
             @update:tool="store.setTool($event)"
             @show-notification="showNotification"
@@ -313,6 +314,7 @@
 
 <script>
 import { useCanvasStore } from './stores/canvasStore.js';
+import { makeShapePart } from './utils/makeShapePart.js';
 import MenuBar from './components/MenuBar.vue';
 import Ribbon from './components/Ribbon.vue';
 import CanvasWorkspace from './components/CanvasWorkspace.vue';
@@ -482,6 +484,7 @@ export default {
           else if (value === 'calculator') this.store.toggleCalculator();
           else if (value === 'colorPicker') this.store.toggleColorPicker();
           else if (value === 'bomGenerator') this.store.toggleBOMGenerator();
+          else if (value === 'makeShapePart') this.handleMakeShapePart(this.store.getSelectedShapes());
           break;
         case 'ai':
           console.log('AI shape suggestion');
@@ -549,6 +552,63 @@ export default {
       }
     },
     
+    handleMakeShapePart(shapes) {
+      if (!shapes || shapes.length === 0) {
+        this.showNotification({
+          type: 'warning',
+          message: 'No shape selected',
+          details: 'Please select a shape to make it a part.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      if (shapes.length > 1) {
+        this.showNotification({
+          type: 'warning',
+          message: 'Multiple shapes selected',
+          details: 'Please select only one shape to make it a part.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      const shape = shapes[0];
+      
+      // Check if the shape already has part properties
+      if (shape.partProperties) {
+        // If it does, show the dialog with the existing properties
+        this.store.togglePartPropertiesDialog(shape.partProperties);
+        
+        this.showNotification({
+          type: 'info',
+          message: 'Edit part properties',
+          details: 'You can modify the existing part properties.',
+          duration: 3000
+        });
+      } else {
+        // Initialize default part properties
+        const defaultProperties = {
+          name: shape.name || 'Unnamed Part',
+          haystackTag: '',
+          partNumber: '',
+          quantity: 1,
+          description: '',
+          pointType: '',
+          pdfPath: ''
+        };
+        
+        // Show the part properties dialog
+        this.store.togglePartPropertiesDialog(defaultProperties);
+        
+        this.showNotification({
+          type: 'info',
+          message: 'Assigning part properties',
+          details: 'Please fill in the part details in the dialog.',
+          duration: 3000
+        });
+      }
+    },
 
     zoomCanvas(factor) {
       if (this.$refs.canvas) {

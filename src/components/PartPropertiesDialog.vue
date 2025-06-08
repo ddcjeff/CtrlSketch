@@ -1,7 +1,12 @@
 <template>
   <div v-if="show" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-gray-800 rounded-lg p-4 w-96 max-h-[90vh] overflow-y-auto">
-      <h3 class="text-white text-lg font-medium mb-4">Assign Part Properties</h3>
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-white text-lg font-medium">Assign Part Properties</h3>
+        <button @click="openPartSelector" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-sm">
+          Browse Database
+        </button>
+      </div>
       
       <div class="mb-3">
         <label class="block text-gray-400 text-sm mb-1">Part Name</label>
@@ -14,11 +19,15 @@
       
       <div class="mb-3">
         <label class="block text-gray-400 text-sm mb-1">Haystack Tag</label>
-        <input 
-          type="text" 
+        <textarea 
           v-model="localProperties.haystackTag" 
           class="w-full bg-gray-700 text-white rounded-md border border-gray-600 px-3 py-2"
-        />
+          rows="2"
+          placeholder="e.g. {id:HD3XMSTN, equip:true, hvac:true}"
+        ></textarea>
+        <div class="text-xs text-gray-500 mt-1">
+          Enter Haystack tags in JSON format or as a simple string
+        </div>
       </div>
       
       <div class="mb-3">
@@ -97,12 +106,24 @@
       accept=".pdf"
       @change="handlePdfSelect"
     />
+    
+    <!-- Part Selector Dialog -->
+    <PartSelector 
+      v-if="showPartSelector" 
+      @close="showPartSelector = false"
+      @select="selectPartFromDatabase"
+    />
   </div>
 </template>
 
 <script>
+import PartSelector from './PartSelector.vue';
+
 export default {
   name: 'PartPropertiesDialog',
+  components: {
+    PartSelector
+  },
   props: {
     show: {
       type: Boolean,
@@ -131,7 +152,8 @@ export default {
         description: '',
         pointType: '',
         pdfPath: ''
-      }
+      },
+      showPartSelector: false
     };
   },
   watch: {
@@ -157,6 +179,28 @@ export default {
       
       // Reset the input
       event.target.value = '';
+    },
+    
+    openPartSelector() {
+      this.showPartSelector = true;
+    },
+    
+    selectPartFromDatabase(partProperties) {
+      // Make a copy of the part properties
+      const properties = { ...partProperties };
+      
+      // Format the Haystack tag if it's an object
+      if (typeof properties.haystackTag === 'object') {
+        try {
+          // Convert to a formatted JSON string
+          properties.haystackTag = JSON.stringify(properties.haystackTag, null, 2);
+        } catch (e) {
+          console.warn('Error formatting Haystack tag:', e);
+        }
+      }
+      
+      this.localProperties = properties;
+      this.showPartSelector = false;
     },
     
     cancel() {
