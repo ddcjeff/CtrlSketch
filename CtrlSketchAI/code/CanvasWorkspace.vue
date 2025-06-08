@@ -406,8 +406,17 @@ export default {
         shape.image = this.imageCache.get(shape.id);
         
         // Update the shape in the shapes array and clear any previous errors
+        // Also ensure stroke and fill are null for image shapes
         const updatedShapes = this.shapes.map(s => 
-          s.id === shape.id ? { ...s, image: shape.image, imageError: null } : s
+          s.id === shape.id ? { 
+            ...s, 
+            image: shape.image, 
+            imageError: null,
+            stroke: null,
+            fill: null,
+            lineWidth: 0,
+            editable: false // Ensure no editable properties for images
+          } : s
         );
         this.$emit('shape-updated', updatedShapes);
         this.render();
@@ -511,8 +520,18 @@ export default {
           this.imageCache.set(shape.id, img);
           
           // Update the shape in the shapes array
+          // Also ensure stroke and fill are null for image shapes
           const updatedShapes = this.shapes.map(s => 
-            s.id === shape.id ? { ...s, image: img, isLoading: false, imageError: null } : s
+            s.id === shape.id ? { 
+              ...s, 
+              image: img, 
+              isLoading: false, 
+              imageError: null,
+              stroke: null,
+              fill: null,
+              lineWidth: 0,
+              editable: false // Ensure no editable properties for images
+            } : s
           );
           this.$emit('shape-updated', updatedShapes);
           this.render();
@@ -858,19 +877,14 @@ export default {
           }
           this.$emit('shapes-selected', [...this.localSelectedShapes]);
           // Only set isDragging if the shape is movable
-          if (this.localSelectedShapes.some(s => s.id === shape.id && s.movable !== false)) {
-            console.log('Shape is movable, enabling drag mode:', shape.id);
-            this.isDragging = true;
-            
-            // Set the starting point for the drag operation
-            // We need to use the snapped coordinates to match what we use in handleMouseMove
-            const snappedPoint = this.snapCoordinate(x, y);
-            this.startX = snappedPoint.x;
-            this.startY = snappedPoint.y;
-            console.log('Setting drag start point:', this.startX, this.startY);
-          } else {
-            console.log('Shape is not movable, drag mode disabled:', shape.id, 'movable:', shape.movable);
-          }
+          if (this.localSelectedShapes.some(s => s.id === shape.id)) {
+          console.log('Enabling drag mode:', shape.id);
+           this.isDragging = true;
+          const snappedPoint = this.snapCoordinate(x, y);
+           this.startX = snappedPoint.x;
+           this.startY = snappedPoint.y;
+          console.log('Setting drag start point:', this.startX, this.startY);
+}
           this.render();
         }
         return;
@@ -1003,17 +1017,30 @@ export default {
           const updatedShapes = this.shapes.map(s => {
             const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
             if (movedShape) {
-              // Create a new object with all properties from both objects
-              return { 
-                ...s, 
-                ...movedShape,
-                // Explicitly set these properties to ensure they're correct
-                x: movedShape.x,
-                y: movedShape.y,
-                movable: movedShape.movable !== false, // Ensure movable is true unless explicitly set to false
-                fill: (movedShape.fill && movedShape.fill !== '') ? movedShape.fill : '#3B82F6', // Ensure fill is valid
-                stroke: (movedShape.stroke && movedShape.stroke !== '') ? movedShape.stroke : '#000000' // Ensure stroke is valid
-              };
+              // Create a new object with updated properties
+              if (s.type === 'image') {
+                // For image shapes, only update position and essential properties
+                return {
+                  ...s,
+                  x: movedShape.x,
+                  y: movedShape.y,
+                  selectable: true,
+                  movable: true,
+                  rotation: movedShape.rotation || 0
+                };
+              } else {
+                // For all other shapes, include style properties
+                return { 
+                  ...s, 
+                  ...movedShape,
+                  // Explicitly set these properties to ensure they're correct
+                  x: movedShape.x,
+                  y: movedShape.y,
+                  movable: movedShape.movable !== false, // Ensure movable is true unless explicitly set to false
+                  fill: (movedShape.fill && movedShape.fill !== '') ? movedShape.fill : '#3B82F6', // Ensure fill is valid
+                  stroke: (movedShape.stroke && movedShape.stroke !== '') ? movedShape.stroke : '#000000' // Ensure stroke is valid
+                };
+              }
             }
             return s;
           });
@@ -1271,6 +1298,7 @@ export default {
       if (shape) {
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
+          console.log('Shape layer:', shape.layerId, 'Frozen:', shapeLayer?.frozen);
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
             const shapeIndex = this.localSelectedShapes.findIndex(s => s.id === shape.id);
             if (shapeIndex !== -1) {
@@ -1450,8 +1478,14 @@ export default {
         // Handle image shapes
         if (shape.type === 'image') {
           console.log('Testing image shape:', shape.id, 'at', shape.x, shape.y, shape.width, shape.height);
-          if (x >= shape.x && x <= shape.x + shape.width && 
-              y >= shape.y && y <= shape.y + shape.height) {
+          
+          // Add a small buffer for easier selection
+          const imageBuffer = 5 / this.zoom;
+          
+          if (x >= shape.x - imageBuffer && 
+              x <= shape.x + shape.width + imageBuffer && 
+              y >= shape.y - imageBuffer && 
+              y <= shape.y + shape.height + imageBuffer) {
             console.log('Hit image shape:', shape.id);
             return shape;
           }
@@ -2643,13 +2677,9 @@ export default {
             ctx.beginPath();
             ctx.lineWidth = shape.lineWidth / this.zoom;
             // Handle empty or invalid stroke values
-            ctx.strokeStyle = !shape.stroke || shape.stroke === '' || shape.stroke === 'transparent' 
-              ? '#00000000' 
-              : shape.stroke;
+            ctx.strokeStyle = this.safeColor(shape.stroke, '#00000000');
             // Handle empty or invalid fill values
-            ctx.fillStyle = !shape.fill || shape.fill === '' || shape.fill === 'transparent' 
-              ? '#00000000' 
-              : shape.fill;
+            ctx.fillStyle = this.safeColor(shape.fill, '#00000000');
             if (shape.lineStyle) {
               this.applyLineStyle(ctx, shape.lineStyle, shape.lineWidth / this.zoom);
             }
@@ -2688,9 +2718,7 @@ export default {
             ctx.textAlign = shape.textAlign || 'left';
             ctx.textBaseline = 'top';
             // Handle empty or invalid fill values for text
-            ctx.fillStyle = !shape.fill || shape.fill === '' || shape.fill === 'transparent' 
-              ? '#000000' // Default to black for text
-              : shape.fill;
+            ctx.fillStyle = this.safeColor(shape.fill, '#000000'); // Default to black for text
             ctx.fillText(shape.text, shape.x, shape.y);
             if (shape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(shape.text).width;
@@ -2985,13 +3013,9 @@ export default {
         } else {
           ctx.lineWidth = this.currentShape.lineWidth / this.zoom;
           // Handle empty or invalid stroke values
-          ctx.strokeStyle = !this.currentShape.stroke || this.currentShape.stroke === '' || this.currentShape.stroke === 'transparent' 
-            ? '#00000000' 
-            : this.currentShape.stroke;
+          ctx.strokeStyle = this.safeColor(this.currentShape.stroke, '#00000000');
           // Handle empty or invalid fill values
-          ctx.fillStyle = !this.currentShape.fill || this.currentShape.fill === '' || this.currentShape.fill === 'transparent' 
-            ? '#00000000' 
-            : this.currentShape.fill;
+          ctx.fillStyle = this.safeColor(this.currentShape.fill, '#00000000');
           if (this.currentShape.lineStyle) {
             this.applyLineStyle(ctx, this.currentShape.lineStyle, this.currentShape.lineWidth / this.zoom);
           }
@@ -3028,7 +3052,7 @@ export default {
             ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
             ctx.textAlign = this.currentShape.textAlign || 'left';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = this.currentShape.fill && this.currentShape.fill !== 'transparent' ? this.currentShape.fill : '#000000';
+            ctx.fillStyle = this.safeColor(this.currentShape.fill, '#000000'); // Default to black for text
             ctx.fillText(this.currentShape.text, this.currentShape.x, this.currentShape.y);
             if (this.currentShape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(this.currentShape.text).width;
@@ -3273,6 +3297,26 @@ export default {
         this.render();
       }
       requestAnimationFrame(this.animate.bind(this));
+    },
+    
+    /**
+     * Safely handles color values, converting 'transparent' to a valid rgba format
+     * @param {string|null} color - The color value to process
+     * @param {string} defaultColor - The default color to use if the input is invalid
+     * @returns {string} - A valid color string
+     */
+    safeColor(color, defaultColor = 'rgba(0,0,0,0)') {
+      // If color is null, undefined, empty string, or 'transparent', return the default color
+      if (color === null || color === undefined || color === '' || color === 'transparent') {
+        return defaultColor;
+      }
+      
+      // If the color is already in rgba format with 0 alpha, return it as is
+      if (color === 'rgba(0,0,0,0)' || color === 'rgba(255,255,255,0)' || color === '#00000000') {
+        return color;
+      }
+      
+      return color;
     },
     
     /**
@@ -3640,7 +3684,7 @@ export default {
   font-weight: bold;
   transition: background-color 0.2s;
   margin-top: 5px;
-}
+}Z
 
 .import-controls button:hover {
   background-color: #d32f2f;

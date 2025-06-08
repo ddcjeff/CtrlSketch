@@ -11,12 +11,10 @@
     <div class="p-3">
       <!-- Color preview -->
       <div class="flex items-center mb-4">
-        <div class="w-16 h-16 rounded-md border border-gray-600 mr-3 color-preview" 
-             :class="{ 'transparent-bg': isTransparent }"
-             :style="{ backgroundColor: isTransparent ? 'transparent' : currentColor }"></div>
+        <div class="w-16 h-16 rounded-md border border-gray-600 mr-3" :style="{ backgroundColor: currentColor }"></div>
         <div>
           <div class="text-gray-300 text-sm mb-1">Current Color</div>
-          <div class="text-white font-mono">{{ isTransparent ? 'Transparent' : currentColor.toUpperCase() }}</div>
+          <div class="text-white font-mono">{{ currentColor.toUpperCase() }}</div>
         </div>
       </div>
       
@@ -25,17 +23,7 @@
         <label class="block text-gray-400 text-xs mb-1">Select Color</label>
         <input type="color" 
                v-model="currentColor" 
-               class="w-full h-10 rounded-md bg-transparent cursor-pointer"
-               :disabled="isTransparent" />
-        
-        <!-- Transparency toggle -->
-        <div class="flex items-center mt-2">
-          <input type="checkbox" 
-                 id="transparent-toggle" 
-                 v-model="isTransparent" 
-                 class="mr-2" />
-          <label for="transparent-toggle" class="text-gray-300 text-sm">Transparent</label>
-        </div>
+               class="w-full h-10 rounded-md bg-transparent cursor-pointer" />
       </div>
       
       <!-- Preset colors -->
@@ -105,18 +93,8 @@ export default {
     }
   },
   data() {
-    // Convert 'transparent' to a valid hex color for the HTML5 color input
-    let initialColor = this.initialColor;
-    if (initialColor === 'transparent' || initialColor === 'rgba(0,0,0,0)' || initialColor === 'rgba(255,255,255,0)') {
-      initialColor = '#ffffff'; // Use white as a fallback for transparent
-      this.isTransparent = true;
-    } else {
-      this.isTransparent = false;
-    }
-    
     return {
-      currentColor: initialColor,
-      isTransparent: this.isTransparent,
+      currentColor: this.initialColor,
       position: this.initialPosition,
       isDragging: false,
       dragOffset: { x: 0, y: 0 },
@@ -184,14 +162,10 @@ export default {
         });
     },
     applyColor() {
-      // If transparent is checked, emit a color with appropriate transparency flag
-      const colorToApply = this.isTransparent ? '#000000' : this.currentColor;
-      // Pass the transparency flag and whether this is for fill (true) or stroke (false)
-      // The default is fill=true since most color picking is for fills
-      this.$emit('color-selected', colorToApply, this.isTransparent, true);
+      this.$emit('color-selected', this.currentColor);
       this.$emit('notification', {
         type: 'success',
-        message: this.isTransparent ? 'Transparent color applied' : 'Color applied',
+        message: 'Color applied',
         duration: 2000
       });
     },
@@ -244,14 +218,5 @@ input[type="color"]::-webkit-color-swatch-wrapper {
 input[type="color"]::-webkit-color-swatch {
   border: none;
   border-radius: 4px;
-}
-
-.transparent-bg {
-  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
-                    linear-gradient(-45deg, #ccc 25%, transparent 25%),
-                    linear-gradient(45deg, transparent 75%, #ccc 75%),
-                    linear-gradient(-45deg, transparent 75%, #ccc 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
 }
 </style>
