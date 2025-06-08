@@ -577,22 +577,29 @@ export default {
       const file = event.target.files[0];
       if (!file) return;
       
+      console.log('Importing file:', file.name, 'type:', file.type);
+      
       const reader = new FileReader();
       reader.onload = (e) => {
-        const id = 'shape_' + Date.now();
+        const id = 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         const name = file.name.split('.')[0];
         
         // For SVG files, we can use the content directly
         if (file.type === 'image/svg+xml') {
-          this.shapes.push({
+          console.log('Processing SVG file');
+          const newShape = {
             id,
             libraryId: this.currentLibraryId,
             name,
             data: { type: 'svg', content: e.target.result },
             thumbnail: e.target.result
-          });
+          };
           
+          this.shapes.push(newShape);
           this.saveData();
+          
+          console.log('Added SVG shape:', newShape);
+          
           this.$emit('notification', {
             type: 'success',
             message: `Shape "${name}" imported`,
@@ -601,23 +608,50 @@ export default {
         } 
         // For images, we'll use them as thumbnails and create image shapes
         else if (file.type.startsWith('image/')) {
-          this.shapes.push({
-            id,
-            libraryId: this.currentLibraryId,
-            name,
-            data: { type: 'image', src: e.target.result },
-            thumbnail: e.target.result
-          });
+          console.log('Processing image file');
           
-          this.saveData();
-          this.$emit('notification', {
-            type: 'success',
-            message: `Shape "${name}" imported`,
-            duration: 3000
-          });
+          // Create an image element to get dimensions
+          const img = new Image();
+          img.onload = () => {
+            const newShape = {
+              id,
+              libraryId: this.currentLibraryId,
+              name,
+              data: { 
+                type: 'image', 
+                src: e.target.result,
+                width: img.width,
+                height: img.height
+              },
+              thumbnail: e.target.result
+            };
+            
+            this.shapes.push(newShape);
+            this.saveData();
+            
+            console.log('Added image shape:', newShape);
+            
+            this.$emit('notification', {
+              type: 'success',
+              message: `Shape "${name}" imported`,
+              duration: 3000
+            });
+          };
+          
+          img.onerror = (err) => {
+            console.error('Error loading image:', err);
+            this.$emit('notification', {
+              type: 'error',
+              message: `Failed to load image: ${err.message || 'Unknown error'}`,
+              duration: 3000
+            });
+          };
+          
+          img.src = e.target.result;
         }
         // For JSON files, parse the content and import shapes
         else if (file.name.endsWith('.json')) {
+          console.log('Processing JSON file');
           try {
             const jsonData = JSON.parse(e.target.result);
             this.importJsonShapes(jsonData, name);
@@ -632,10 +666,25 @@ export default {
         }
       };
       
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        this.$emit('notification', {
+          type: 'error',
+          message: 'Error reading file',
+          duration: 3000
+        });
+      };
+      
       if (file.type === 'image/svg+xml' || file.type.startsWith('image/')) {
         reader.readAsDataURL(file);
       } else if (file.name.endsWith('.json')) {
         reader.readAsText(file);
+      } else {
+        this.$emit('notification', {
+          type: 'error',
+          message: `Unsupported file type: ${file.type}`,
+          duration: 3000
+        });
       }
       
       // Reset the input
@@ -1566,29 +1615,46 @@ export default {
           return;
         }
         
+        console.log('Generating thumbnails for', this.shapes.length, 'shapes');
+        
+        let thumbnailsGenerated = 0;
+        
         this.shapes.forEach(shape => {
           try {
-            if (!shape.thumbnail && shape.data) {
+            // Always regenerate thumbnails if they're missing or invalid
+            if (!shape.thumbnail || shape.thumbnail === 'undefined' || shape.thumbnail === 'null') {
+              console.log(`Generating thumbnail for shape: ${shape.name} (${shape.id}), type: ${shape.data?.type}`);
+              
               // For SVG content, we can use it directly
-              if (shape.data.type === 'svg' && shape.data.content) {
+              if (shape.data?.type === 'svg' && shape.data.content) {
                 shape.thumbnail = shape.data.content;
+                thumbnailsGenerated++;
               }
               // For images, use the source
-              else if (shape.data.type === 'image' && shape.data.src) {
+              else if (shape.data?.type === 'image' && shape.data.src) {
                 shape.thumbnail = shape.data.src;
+                thumbnailsGenerated++;
               }
               // For basic shapes, generate a simple SVG thumbnail
-              else {
+              else if (shape.data) {
                 shape.thumbnail = this.generateShapeThumbnail(shape.data);
+                thumbnailsGenerated++;
+              } else {
+                console.warn('Shape has no valid data for thumbnail generation:', shape);
+                shape.thumbnail = this.generateDefaultThumbnail('No Data');
+                thumbnailsGenerated++;
               }
             }
           } catch (err) {
             console.error('Error generating thumbnail for shape:', shape, err);
+            // Set a default thumbnail for error cases
+            shape.thumbnail = this.generateDefaultThumbnail('Error');
+            thumbnailsGenerated++;
           }
         });
         
         this.saveData();
-        console.log('Generated thumbnails for', this.shapes.length, 'shapes');
+        console.log(`Generated ${thumbnailsGenerated} thumbnails for ${this.shapes.length} shapes`);
       } catch (error) {
         console.error('Error in generateThumbnails:', error);
       }
@@ -1700,12 +1766,27 @@ export default {
           // Simple path thumbnail - just show a placeholder
           shapeSvg = `<path d="M ${padding} ${size / 2} Q ${size / 2} ${padding}, ${size - padding} ${size / 2} T ${padding} ${size / 2}" fill="none" stroke="${shapeData.stroke || '#000'}" stroke-width="${shapeData.strokeWidth || 2}" />`;
         } else if (shapeData.type === 'text') {
-          shapeSvg = `<text x="${size / 2}" y="${size / 2}" font-family="${shapeData.fontFamily || 'Arial'}" font-size="${shapeData.fontSize || 16}" fill="${shapeData.fill || '#000'}" text-anchor="middle" dominant-baseline="middle">${shapeData.text || 'Text'}</text>`;
+          // Escape text content for SVG
+          const textContent = (shapeData.text || 'Text')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+            
+          shapeSvg = `<text x="${size / 2}" y="${size / 2}" font-family="${shapeData.fontFamily || 'Arial'}" font-size="${shapeData.fontSize || 16}" fill="${shapeData.fill || '#000'}" text-anchor="middle" dominant-baseline="middle">${textContent}</text>`;
         } else if (shapeData.type === 'group') {
           // For groups, just show a placeholder
           shapeSvg = `
             <rect x="${padding}" y="${padding}" width="${innerSize}" height="${innerSize}" fill="#f0f0f0" stroke="#ccc" stroke-width="1" />
             <text x="${size / 2}" y="${size / 2}" font-family="Arial" font-size="12" fill="#666" text-anchor="middle" dominant-baseline="middle">Group</text>
+          `;
+        } else if (shapeData.type === 'image') {
+          // For images, show a placeholder with an image icon
+          shapeSvg = `
+            <rect x="${padding}" y="${padding}" width="${innerSize}" height="${innerSize}" fill="#f0f0f0" stroke="#ccc" stroke-width="1" />
+            <path d="M${padding+10},${padding+10} h${innerSize-20} v${innerSize-20} h-${innerSize-20} z M${padding+15},${padding+25} a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 M${padding+10},${padding+innerSize-10} l${innerSize/3},-${innerSize/3} l${innerSize/4},${innerSize/5} l${innerSize/3},-${innerSize/2} l${innerSize/8},${innerSize/1.5}" stroke="#666" fill="none" stroke-width="2" />
+            <text x="${size / 2}" y="${size - padding - 5}" font-family="Arial" font-size="10" fill="#666" text-anchor="middle">Image</text>
           `;
         } else {
           // Default placeholder
@@ -1715,7 +1796,13 @@ export default {
           `;
         }
         
-        return `data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${shapeSvg}</svg>`;
+        // Properly encode the SVG for use in a data URL
+        const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${shapeSvg}</svg>`;
+        const encodedSvg = encodeURIComponent(svgContent)
+          .replace(/'/g, '%27')
+          .replace(/"/g, '%22');
+          
+        return `data:image/svg+xml;charset=utf-8,${encodedSvg}`;
       } catch (error) {
         console.error('Error generating shape thumbnail:', error);
         return this.generateDefaultThumbnail('Error');
@@ -1730,12 +1817,26 @@ export default {
       const padding = 10;
       const innerSize = size - (padding * 2);
       
+      // Escape the label text
+      const safeLabel = (label || 'Unknown')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+      
       const shapeSvg = `
         <rect x="${padding}" y="${padding}" width="${innerSize}" height="${innerSize}" fill="#f0f0f0" stroke="#ccc" stroke-width="1" />
-        <text x="${size / 2}" y="${size / 2}" font-family="Arial" font-size="12" fill="#666" text-anchor="middle" dominant-baseline="middle">${label}</text>
+        <text x="${size / 2}" y="${size / 2}" font-family="Arial" font-size="12" fill="#666" text-anchor="middle" dominant-baseline="middle">${safeLabel}</text>
       `;
       
-      return `data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${shapeSvg}</svg>`;
+      // Properly encode the SVG for use in a data URL
+      const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${shapeSvg}</svg>`;
+      const encodedSvg = encodeURIComponent(svgContent)
+        .replace(/'/g, '%27')
+        .replace(/"/g, '%22');
+        
+      return `data:image/svg+xml;charset=utf-8,${encodedSvg}`;
     }
   }
 };
