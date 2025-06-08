@@ -44,7 +44,7 @@ export default {
     },
     version: {
       type: String,
-      default: '2.1.0'
+      default: __APP_VERSION__ || '2.1.0'
     },
     licenseNumber: {
       type: String,
