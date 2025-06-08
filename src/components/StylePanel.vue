@@ -8,8 +8,8 @@
     </h3>
     
     <div 
-      v-for="shape in selectedShapes" 
-      :key="shape.id"
+      v-for="(shape, index) in selectedShapes.filter(s => s.type !== 'image')" 
+      :key="shape.id + '-' + index"
       class="animate-in slide-in-from-right duration-300"
     >
       <div class="card bg-gray-800/50 backdrop-blur-sm border border-gray-700 mb-4 p-4 rounded-xl hover:shadow-inner-glow transition-all duration-300">
@@ -299,14 +299,44 @@ export default {
     setTransparentFill(shape) {
       // Create a copy to avoid direct mutation
       const shapeCopy = { ...shape };
-      shapeCopy.fill = shapeCopy.fill === 'transparent' ? '#ffffff' : 'transparent';
+      // Toggle between transparent (rgba with 0 alpha) and white
+      // Check if current fill is already transparent (has rgba with 0 alpha)
+      const isCurrentlyTransparent = shapeCopy.fill && 
+        (shapeCopy.fill === 'rgba(0,0,0,0)' || 
+         shapeCopy.fill === 'rgba(255,255,255,0)' || 
+         shapeCopy.fill === '#00000000');
+      
+      if (isCurrentlyTransparent) {
+        shapeCopy.fill = '#ffffff';
+        shapeCopy._isFillTransparent = false;
+        console.log('Setting fill to opaque for shape:', shapeCopy.id);
+      } else {
+        shapeCopy.fill = '#000000';
+        shapeCopy._isFillTransparent = true;
+        console.log('Setting fill to transparent for shape:', shapeCopy.id);
+      }
       this.updateShape(shapeCopy);
     },
     
     setTransparentStroke(shape) {
       // Create a copy to avoid direct mutation
       const shapeCopy = { ...shape };
-      shapeCopy.stroke = shapeCopy.stroke === 'transparent' ? '#000000' : 'transparent';
+      // Toggle between transparent (rgba with 0 alpha) and black
+      // Check if current stroke is already transparent (has rgba with 0 alpha)
+      const isCurrentlyTransparent = shapeCopy.stroke && 
+        (shapeCopy.stroke === 'rgba(0,0,0,0)' || 
+         shapeCopy.stroke === 'rgba(255,255,255,0)' || 
+         shapeCopy.stroke === '#00000000');
+      
+      if (isCurrentlyTransparent) {
+        shapeCopy.stroke = '#000000';
+        shapeCopy._isStrokeTransparent = false;
+        console.log('Setting stroke to opaque for shape:', shapeCopy.id);
+      } else {
+        shapeCopy.stroke = '#000000';
+        shapeCopy._isStrokeTransparent = true;
+        console.log('Setting stroke to transparent for shape:', shapeCopy.id);
+      }
       this.updateShape(shapeCopy);
     }
   }

@@ -1,8 +1,14 @@
 <template>
   <div ref="wrapper" class="wrapper" @dblclick="resetZoom">
+
     <canvas
       ref="canvas"
-      class="styled-canvas"
+      :class="[
+        'styled-canvas', 
+        getCursorClass(),
+        tool === 'hand' ? 'force-hand-cursor' : '',
+        (tool === 'hand' && isDragging) ? 'active' : ''
+      ]"
       :width="canvasWidth"
       :height="canvasHeight"
       @wheel.prevent="handleWheel"
@@ -74,6 +80,14 @@ export default {
     styles: Object,
     gridSize: Number,
     gridOpacity: Number,
+    gridType: {
+      type: String,
+      default: 'square'
+    },
+    gridColor: {
+      type: String,
+      default: '#000000'
+    },
     showRulers: Boolean,
     snapToGrid: Boolean,
     shapes: {
@@ -101,6 +115,7 @@ export default {
       default: ''
     }
   },
+
   data() {
     return {
       ctx: null,
@@ -116,6 +131,7 @@ export default {
       isDragging: false,
       isResizing: false,
       isRotating: false,
+      isDrawingTool: false, // Flag to track if we're using a drawing tool
       startX: 0,
       startY: 0,
       currentShape: null,
@@ -123,6 +139,8 @@ export default {
       selectionStart: null,
       lastGridSize: 0,
       lastGridOpacity: 0,
+      lastGridType: '',
+      lastGridColor: '',
       lastZoom: 1,
       cursorX: 0,
       cursorY: 0,
@@ -157,7 +175,7 @@ export default {
       },
       showDebugOverlay: false,
       debugInfo: {
-        position: { x: 10, y: 10 },
+        position: { x: 0, y: 0 }, // Will be centered in toggleDebugOverlay
         size: { width: 400, height: 400 },
         isDragging: false,
         dragStart: { x: 0, y: 0 }
@@ -171,6 +189,14 @@ export default {
         console.log('selectedShapes prop changed:', newVal.length);
         this.localSelectedShapes = [...newVal];
         this.render();
+      }
+    },
+    tool: {
+      immediate: true,
+      handler(newVal, oldVal) {
+        console.log('Tool changed from', oldVal, 'to', newVal);
+        // If the tool is not 'select' or 'hand', we'll need to emit an event when the drawing is complete
+        this.isDrawingTool = !['select', 'hand', ''].includes(newVal);
       }
     },
     shapes: {
@@ -230,6 +256,14 @@ export default {
       this.staticCanvasDirty = true;
       this.render();
     },
+    gridType() {
+      this.staticCanvasDirty = true;
+      this.render();
+    },
+    gridColor() {
+      this.staticCanvasDirty = true;
+      this.render();
+    },
     zoom() {
       this.staticCanvasDirty = true;
     },
@@ -262,7 +296,12 @@ export default {
       canvas.focus();
       setTimeout(() => {
         this.centerCanvas('reset');
+        
+        // Ensure we start in select mode
+        console.log('Canvas mounted, ensuring select mode is active');
+        this.forceSelectMode();
       }, 100);
+      
       window.addEventListener("resize", this.centerCanvas);
       canvas.addEventListener("keydown", this.handleKeyDown, true);
       document.addEventListener("keydown", this.handleKeyDown);
@@ -295,24 +334,69 @@ export default {
     this.shapeCache.clear();
   },
   methods: {
-
-    loadImageForShape(shape) {
-      if (shape.imgEl || shape.imageError) return;
-      const img = new Image();
-      img.onload = () => {
-        shape.imageLoaded = true;
-        shape.imgEl = this.$markRaw ? this.$markRaw(img) : img;
-        this.render();
-      };
-      img.onerror = () => {
-        console.warn(`Image failed to load for shape:`, shape);
-        shape.imageError = true;
-        shape.imgEl = null;
-        this.render();
-      };
-      img.src = shape.src;
+    /**
+     * Returns the appropriate cursor class based on the current tool and state
+     * @returns {string} CSS class for the cursor
+     */
+    getCursorClass() {
+      // Log the current tool for debugging
+      console.log('Getting cursor class for tool:', this.tool);
+      
+      // If we're resizing, return the appropriate resize cursor
+      if (this.isResizing && this.resizeHandle) {
+        return `cursor-resize-${this.resizeHandle}`;
+      }
+      
+      // If we're rotating, return the rotate cursor
+      if (this.isRotating) {
+        return 'cursor-rotate';
+      }
+      
+      // If we're dragging with the hand tool, return the active hand cursor
+      if (this.isDragging && this.tool === 'hand') {
+        return 'cursor-hand-active';
+      }
+      
+      // If tool is null, undefined, or empty string, default to select
+      if (!this.tool) {
+        console.log('Tool is empty, defaulting to select cursor');
+        return 'cursor-select';
+      }
+      
+      // Return cursor based on the current tool
+      switch (this.tool) {
+        case 'select':
+          return 'cursor-select';
+        case 'rectangle':
+          return 'cursor-rectangle';
+        case 'ellipse':
+          return 'cursor-ellipse';
+        case 'line':
+          return 'cursor-line';
+        case 'pen':
+          return 'cursor-pen';
+        case 'text':
+          return 'cursor-text';
+        case 'hand':
+          return 'cursor-hand';
+        case 'zoom-in':
+          return 'cursor-zoom-in';
+        case 'zoom-out':
+          return 'cursor-zoom-out';
+        case 'eraser':
+          return 'cursor-eraser';
+        case 'image':
+          return 'cursor-image';
+        case 'shape':
+          return 'cursor-shape';
+        case 'polygon':
+          return 'cursor-polygon';
+        default:
+          console.log('Unknown tool:', this.tool, 'defaulting to select cursor');
+          return 'cursor-select'; // Default to select cursor for unknown tools
+      }
     },
-
+    
     /**
      * Loads or reloads an image for a shape with improved error handling
      * @param {Object} shape - The shape object containing image data
@@ -344,8 +428,17 @@ export default {
         shape.image = this.imageCache.get(shape.id);
         
         // Update the shape in the shapes array and clear any previous errors
+        // Also ensure stroke and fill are null for image shapes
         const updatedShapes = this.shapes.map(s => 
-          s.id === shape.id ? { ...s, image: shape.image, imageError: null } : s
+          s.id === shape.id ? { 
+            ...s, 
+            image: shape.image, 
+            imageError: null,
+            stroke: null,
+            fill: null,
+            lineWidth: 0,
+            editable: false // Ensure no editable properties for images
+          } : s
         );
         this.$emit('shape-updated', updatedShapes);
         this.render();
@@ -449,8 +542,18 @@ export default {
           this.imageCache.set(shape.id, img);
           
           // Update the shape in the shapes array
+          // Also ensure stroke and fill are null for image shapes
           const updatedShapes = this.shapes.map(s => 
-            s.id === shape.id ? { ...s, image: img, isLoading: false, imageError: null } : s
+            s.id === shape.id ? { 
+              ...s, 
+              image: img, 
+              isLoading: false, 
+              imageError: null,
+              stroke: null,
+              fill: null,
+              lineWidth: 0,
+              editable: false // Ensure no editable properties for images
+            } : s
           );
           this.$emit('shape-updated', updatedShapes);
           this.render();
@@ -516,8 +619,15 @@ export default {
      * @param {string} state - The state of the image ('empty', 'loading', 'error')
      */
     drawImagePlaceholder(ctx, shape, state) {
-      // Base placeholder
-      ctx.fillStyle = state === 'error' ? '#FEE2E2' : '#E5E7EB';
+      console.log(`Drawing image placeholder for shape ${shape.id}, state: ${state}`);
+      
+      // Save context state
+      ctx.save();
+      
+      // Base placeholder with semi-transparent background
+      ctx.fillStyle = state === 'error' ? 'rgba(254, 226, 226, 0.8)' : 
+                      state === 'loading' ? 'rgba(219, 234, 254, 0.8)' : 
+                      'rgba(229, 231, 235, 0.8)';
       ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
       
       // Border
@@ -529,12 +639,13 @@ export default {
       // Draw image icon
       const centerX = shape.x + shape.width / 2;
       const centerY = shape.y + shape.height / 2;
-      const iconSize = Math.min(40, Math.min(shape.width, shape.height) / 2) / this.zoom;
+      const iconSize = Math.min(60, Math.min(shape.width, shape.height) / 2) / this.zoom;
       
       ctx.strokeStyle = state === 'error' ? '#DC2626' : 
                         state === 'loading' ? '#2563EB' : '#6B7280';
       ctx.fillStyle = state === 'error' ? '#FCA5A5' : 
                       state === 'loading' ? '#BFDBFE' : '#D1D5DB';
+      ctx.lineWidth = 3 / this.zoom;
       
       // Draw image frame icon
       ctx.beginPath();
@@ -555,11 +666,95 @@ export default {
       ctx.closePath();
       ctx.fill();
     },
-    snapCoordinate(coord) {
-      if (this.snapToGrid && this.gridSize) {
-        return Math.round(coord / this.gridSize) * this.gridSize;
+    snapCoordinate(coord, y) {
+      // If snap to grid is disabled or grid size is 0, return the original coordinates
+      if (!this.snapToGrid || !this.gridSize) {
+        return y !== undefined ? { x: coord, y } : coord;
       }
-      return coord;
+      
+      const step = this.gridSize;
+      
+      // If y is provided, we're snapping a point (x,y)
+      if (y !== undefined) {
+        console.log(`Snapping point (${coord}, ${y}) to ${this.gridType} grid`);
+        
+        switch (this.gridType) {
+          case 'square':
+            return {
+              x: Math.round(coord / step) * step,
+              y: Math.round(y / step) * step
+            };
+            
+          case 'isometric':
+            // For isometric grid, we need to transform the coordinates
+            // to align with the isometric grid lines
+            const isoMatrix = [
+              [1, 0.5],
+              [0, Math.sqrt(3)/2]
+            ];
+            
+            // Transform to isometric space
+            const isoX = coord * isoMatrix[0][0] + y * isoMatrix[0][1];
+            const isoY = coord * isoMatrix[1][0] + y * isoMatrix[1][1];
+            
+            // Snap in isometric space
+            const snappedIsoX = Math.round(isoX / step) * step;
+            const snappedIsoY = Math.round(isoY / step) * step;
+            
+            // Transform back to cartesian space
+            const det = isoMatrix[0][0] * isoMatrix[1][1] - isoMatrix[0][1] * isoMatrix[1][0];
+            const invMatrix = [
+              [isoMatrix[1][1] / det, -isoMatrix[0][1] / det],
+              [-isoMatrix[1][0] / det, isoMatrix[0][0] / det]
+            ];
+            
+            return {
+              x: snappedIsoX * invMatrix[0][0] + snappedIsoY * invMatrix[0][1],
+              y: snappedIsoX * invMatrix[1][0] + snappedIsoY * invMatrix[1][1]
+            };
+            
+          case 'radial':
+            // For radial grid, convert to polar coordinates, snap, then convert back
+            const centerX = this.canvasWidth / 2;
+            const centerY = this.canvasHeight / 2;
+            
+            // Calculate distance from center and angle
+            const dx = coord - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+            
+            // Snap distance to grid step
+            const snappedDistance = Math.round(distance / step) * step;
+            
+            // Snap angle to 15-degree increments (24 segments)
+            const angleStep = Math.PI / 12; // 15 degrees in radians
+            const snappedAngle = Math.round(angle / angleStep) * angleStep;
+            
+            // Convert back to cartesian coordinates
+            return {
+              x: centerX + snappedDistance * Math.cos(snappedAngle),
+              y: centerY + snappedDistance * Math.sin(snappedAngle)
+            };
+            
+          case 'perspective':
+            // For perspective grid, we'll just use square grid snapping
+            // as perspective snapping would be complex and potentially confusing
+            return {
+              x: Math.round(coord / step) * step,
+              y: Math.round(y / step) * step
+            };
+            
+          default:
+            return {
+              x: Math.round(coord / step) * step,
+              y: Math.round(y / step) * step
+            };
+        }
+      } else {
+        // If only one coordinate is provided, use square grid snapping
+        return Math.round(coord / step) * step;
+      }
     },
     handleMouseDown(e) {
       this.$refs.canvas.focus();
@@ -570,6 +765,9 @@ export default {
         const rect = this.$refs.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        
+        console.log('Mouse down at screen coords:', x, y);
+        console.log('Debug overlay position:', this.debugInfo.position);
         
         // Simple hit test directly here
         const { x: overlayX, y: overlayY } = this.debugInfo.position;
@@ -583,8 +781,11 @@ export default {
           y >= overlayY && 
           y <= overlayY + height
         ) {
+          console.log('Hit detected on debug overlay');
+          
           // If clicking on the header, start dragging
           if (y <= overlayY + headerHeight) {
+            console.log('Starting drag on debug overlay header');
             this.debugInfo.isDragging = true;
             this.debugInfo.dragStart = {
               x: x - this.debugInfo.position.x,
@@ -604,12 +805,16 @@ export default {
       const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
       const x = (e.clientX - rect.left - centerX) / this.zoom;
       const y = (e.clientY - rect.top - centerY) / this.zoom;
-      this.startX = x;
-      this.startY = y;
-      const snappedX = this.snapCoordinate(x);
-      const snappedY = this.snapCoordinate(y);
+      // Set the initial mouse position
+      // We'll update these when we start dragging a shape
+      const snappedPoint = this.snapCoordinate(x, y);
+      this.startX = snappedPoint.x;
+      this.startY = snappedPoint.y;
+      console.log('Initial mouse position set to:', this.startX, this.startY);
+      const snappedX = snappedPoint.x;
+      const snappedY = snappedPoint.y;
       console.log('Mouse down at:', x, y, 'Snapped:', snappedX, snappedY);
-      if (this.tool) {
+      if (this.tool && this.tool !== 'select' && this.tool !== 'hand') {
         this.isDrawing = true;
         this.currentShape = {
           id: Date.now(),
@@ -622,6 +827,9 @@ export default {
           points: this.tool === 'pen' ? [[snappedX, snappedY]] : null,
           rotation: 0,
           lineStyle: 'solid',
+          // Default fill and stroke values
+          fill: '#3B82F6', // Default blue
+          stroke: '#000000', // Default black
           ...(this.tool === 'text' ? {
             fontFamily: 'Arial, sans-serif',
             fontSize: 20,
@@ -635,6 +843,15 @@ export default {
           ...this.styles,
           layerId: this.activeLayer ? this.activeLayer.id : undefined
         };
+        
+        // Ensure fill and stroke are valid
+        if (!this.currentShape.fill || this.currentShape.fill === '') {
+          this.currentShape.fill = '#3B82F6'; // Default blue
+        }
+        
+        if (!this.currentShape.stroke || this.currentShape.stroke === '') {
+          this.currentShape.stroke = '#000000'; // Default black
+        }
         console.log('Started drawing:', this.tool);
         return;
       }
@@ -654,6 +871,23 @@ export default {
       const shape = this.getShapeAt(x, y);
       console.log('Shape found:', shape ? shape.type : 'none');
       if (shape) {
+        // Log all properties of the shape for debugging
+        console.log('Shape details:', JSON.stringify(shape, null, 2));
+        
+        // Log specific properties we're interested in
+        console.log('Shape key properties:', {
+          id: shape.id,
+          type: shape.type,
+          x: shape.x,
+          y: shape.y,
+          width: shape.width,
+          height: shape.height,
+          selectable: shape.selectable,
+          movable: shape.movable,
+          layerId: shape.layerId
+        });
+      }
+      if (shape) {
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -670,9 +904,15 @@ export default {
             console.log('Shape selected:', shape.type);
           }
           this.$emit('shapes-selected', [...this.localSelectedShapes]);
+          // Only set isDragging if the shape is movable
           if (this.localSelectedShapes.some(s => s.id === shape.id)) {
-            this.isDragging = true;
-          }
+          console.log('Enabling drag mode:', shape.id);
+           this.isDragging = true;
+          const snappedPoint = this.snapCoordinate(x, y);
+           this.startX = snappedPoint.x;
+           this.startY = snappedPoint.y;
+          console.log('Setting drag start point:', this.startX, this.startY);
+}
           this.render();
         }
         return;
@@ -702,17 +942,23 @@ export default {
       
       // Check if we're dragging the debug overlay
       if (this.debugInfo.isDragging) {
+        console.log('Dragging debug overlay, mouse at:', canvasX, canvasY);
+        
         // Update position
         this.debugInfo.position = {
           x: canvasX - this.debugInfo.dragStart.x,
           y: canvasY - this.debugInfo.dragStart.y
         };
         
+        console.log('New debug overlay position:', this.debugInfo.position);
+        
         // Keep overlay within canvas bounds
         this.debugInfo.position.x = Math.max(0, Math.min(this.debugInfo.position.x, 
           this.canvasWidth - this.debugInfo.size.width));
         this.debugInfo.position.y = Math.max(0, Math.min(this.debugInfo.position.y, 
           this.canvasHeight - this.debugInfo.size.height));
+        
+        console.log('Bounded debug overlay position:', this.debugInfo.position);
         
         this.render();
         e.stopPropagation();
@@ -749,8 +995,9 @@ export default {
       const y = (e.clientY - rect.top - centerY) / this.zoom;
       this.cursorX = x;
       this.cursorY = y;
-      const snappedX = this.snapCoordinate(x);
-      const snappedY = this.snapCoordinate(y);
+      const snappedPoint = this.snapCoordinate(x, y);
+      const snappedX = snappedPoint.x;
+      const snappedY = snappedPoint.y;
       if (this.isDrawing && this.currentShape) {
         if (this.tool === 'pen') {
           const lastPoint = this.currentShape.points[this.currentShape.points.length - 1];
@@ -766,22 +1013,81 @@ export default {
           this.currentShape.height = snappedY - this.currentShape.y;
         }
       } else if (this.isDragging && this.localSelectedShapes.length > 0) {
+        console.log('In drag mode with', this.localSelectedShapes.length, 'shapes');
+        console.log('Current position:', snappedX, snappedY);
+        console.log('Start position:', this.startX, this.startY);
+        
         const dx = snappedX - this.startX;
         const dy = snappedY - this.startY;
+        console.log('Attempting to move shapes, dx:', dx, 'dy:', dy, 'selected shapes:', this.localSelectedShapes.length);
+        
+        // Log details about each selected shape
+        this.localSelectedShapes.forEach(shape => {
+          console.log('Selected shape details:', {
+            id: shape.id,
+            type: shape.type,
+            x: shape.x,
+            y: shape.y,
+            movable: shape.movable,
+            layerId: shape.layerId
+          });
+        });
+        
         if (dx !== 0 || dy !== 0) {
           this.localSelectedShapes.forEach(shape => {
             const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
-            if (!shapeLayer || !shapeLayer.frozen) {
+            // Check if the shape is movable and the layer is not frozen
+            if (shape.movable !== false && (!shapeLayer || !shapeLayer.frozen)) {
+              console.log('Moving shape:', shape.id, 'dx:', dx, 'dy:', dy);
               shape.x += dx;
               shape.y += dy;
+            } else {
+              console.log('Shape is not movable or layer is frozen:', shape.id, 'movable:', shape.movable, 'layer frozen:', shapeLayer?.frozen);
             }
           });
           this.startX = snappedX;
           this.startY = snappedY;
+          // Create a deep copy of the shapes with updated positions
           const updatedShapes = this.shapes.map(s => {
             const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
-            return movedShape || s;
+            if (movedShape) {
+              // Create a new object with updated properties
+              if (s.type === 'image') {
+                // For image shapes, preserve all properties including the image object
+                // This prevents the image from being reloaded during dragging
+                const updatedImageShape = {
+                  ...s,
+                  x: movedShape.x,
+                  y: movedShape.y,
+                  selectable: true,
+                  movable: true,
+                  rotation: movedShape.rotation || 0,
+                  // Preserve the image object to prevent reloading
+                  image: s.image,
+                  // Preserve transparency flags
+                  _isFillTransparent: s._isFillTransparent,
+                  _isStrokeTransparent: s._isStrokeTransparent
+                };
+                console.log('Updated image shape during drag:', updatedImageShape.id);
+                return updatedImageShape;
+              } else {
+                // For all other shapes, include style properties
+                return { 
+                  ...s, 
+                  ...movedShape,
+                  // Explicitly set these properties to ensure they're correct
+                  x: movedShape.x,
+                  y: movedShape.y,
+                  movable: movedShape.movable !== false, // Ensure movable is true unless explicitly set to false
+                  fill: (movedShape.fill && movedShape.fill !== '') ? movedShape.fill : '#3B82F6', // Ensure fill is valid
+                  stroke: (movedShape.stroke && movedShape.stroke !== '') ? movedShape.stroke : '#000000' // Ensure stroke is valid
+                };
+              }
+            }
+            return s;
           });
+          
+          console.log('Emitting shape-updated event during drag with', updatedShapes.length, 'shapes');
           this.$emit('shape-updated', updatedShapes);
         }
       } else if (this.isResizing && this.localSelectedShapes.length > 0 && this.resizeHandle && !this.activeLayer.frozen) {
@@ -891,18 +1197,57 @@ export default {
             this.currentShape.y += this.currentShape.height;
             this.currentShape.height = Math.abs(this.currentShape.height);
           }
+          
+          // Ensure fill and stroke are valid
+          if (!this.currentShape.fill || this.currentShape.fill === '') {
+            this.currentShape.fill = '#3B82F6'; // Default blue
+            console.log('Added missing fill property to shape');
+          }
+          
+          if (!this.currentShape.stroke || this.currentShape.stroke === '') {
+            this.currentShape.stroke = '#000000'; // Default black
+            console.log('Added missing stroke property to shape');
+          }
+          
           const newShape = { ...this.currentShape };
           const updatedShapes = [...this.shapes, newShape];
           this.$emit('shape-added', updatedShapes);
+          
+          // Always switch back to select mode after drawing a shape
+          console.log('Drawing complete, switching back to select mode');
+          this.forceSelectMode();
         }
         this.currentShape = null;
         this.isDrawing = false;
       } else if (this.isDragging) {
+        console.log('Ending drag operation');
         this.isDragging = false;
+        
+        // Create a deep copy of the shapes to avoid reference issues
         const updatedShapes = this.shapes.map(s => {
           const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
-          return movedShape || s;
+          if (movedShape) {
+            console.log('Emitting updated shape:', movedShape.id, 'new position:', movedShape.x, movedShape.y);
+            
+            // Create a new object with all properties from both objects
+            const updatedShape = { 
+              ...s, 
+              ...movedShape,
+              // Explicitly set these properties to ensure they're correct
+              x: movedShape.x,
+              y: movedShape.y,
+              movable: movedShape.movable !== false, // Ensure movable is true unless explicitly set to false
+              fill: (movedShape.fill && movedShape.fill !== '') ? movedShape.fill : '#3B82F6', // Ensure fill is valid
+              stroke: (movedShape.stroke && movedShape.stroke !== '') ? movedShape.stroke : '#000000' // Ensure stroke is valid
+            };
+            
+            console.log('Updated shape details:', updatedShape);
+            return updatedShape;
+          }
+          return s;
         });
+        
+        console.log('Emitting shape-updated event with', updatedShapes.length, 'shapes');
         this.$emit('shape-updated', updatedShapes);
       } else if (this.isResizing) {
         this.isResizing = false;
@@ -999,6 +1344,7 @@ export default {
       if (shape) {
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
+          console.log('Shape layer:', shape.layerId, 'Frozen:', shapeLayer?.frozen);
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
             const shapeIndex = this.localSelectedShapes.findIndex(s => s.id === shape.id);
             if (shapeIndex !== -1) {
@@ -1085,14 +1431,41 @@ export default {
           isResizing: this.isResizing,
           isRotating: this.isRotating,
           hasSelectionStart: !!this.selectionStart,
-          selectedShapesCount: this.localSelectedShapes.length
+          selectedShapesCount: this.localSelectedShapes.length,
+          currentTool: this.tool
         });
         let actionTaken = false;
-        if (this.isDrawing || this.tool) {
+        
+        // Only emit events - don't try to modify the prop directly
+        this.$emit('update:tool', 'select');
+        this.$emit('tool-change', 'select');
+        
+        // Directly manipulate the canvas element's class
+        const canvas = this.$refs.canvas;
+        if (canvas) {
+          // Remove any cursor classes
+          canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'force-hand-cursor', 'active');
+          
+          // Add the select cursor class
+          canvas.classList.add('cursor-select');
+          
+          console.log('Canvas classes after ESC key:', canvas.className);
+        }
+        
+        // If we have selected shapes, deselect them
+        if (this.localSelectedShapes.length > 0) {
+          console.log('Deselecting shapes on ESC key');
+          this.localSelectedShapes = [];
+          this.$emit('shapes-selected', []);
+          actionTaken = true;
+        }
+        
+        actionTaken = true;
+        
+        if (this.isDrawing) {
           this.isDrawing = false;
           this.currentShape = null;
-          this.$emit('tool-change', null);
-          console.log('Drawing canceled, tool deactivated');
+          console.log('Drawing canceled');
           actionTaken = true;
         }
         if (this.isDragging) {
@@ -1156,12 +1529,43 @@ export default {
     },
     getShapeAt(x, y) {
       console.log('Checking for shape at', x, y, 'with', this.shapes.length, 'shapes');
-      this.shapes.forEach((shape, index) => {
-        console.log(`Shape ${index}:`, shape.type, shape.id, 'at', shape.x, shape.y, shape.width, shape.height);
-      });
+      
+      // Log the first few shapes for debugging
+      const shapesToLog = Math.min(5, this.shapes.length);
+      for (let i = 0; i < shapesToLog; i++) {
+        const shape = this.shapes[i];
+        console.log(`Shape ${i}:`, shape.type, shape.id, 'at', shape.x, shape.y, shape.width, shape.height);
+      }
+      
+      // Start from the top of the stack (last shape drawn)
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const shape = this.shapes[i];
+        
+        // Skip shapes that are explicitly marked as not selectable
+        if (shape.selectable === false) {
+          continue;
+        }
+        
         const buffer = 20 / this.zoom;
+        
+        // Handle image shapes
+        if (shape.type === 'image') {
+          console.log('Testing image shape:', shape.id, 'at', shape.x, shape.y, shape.width, shape.height);
+          
+          // Add a small buffer for easier selection
+          const imageBuffer = 5 / this.zoom;
+          
+          if (x >= shape.x - imageBuffer && 
+              x <= shape.x + shape.width + imageBuffer && 
+              y >= shape.y - imageBuffer && 
+              y <= shape.y + shape.height + imageBuffer) {
+            console.log('Hit image shape:', shape.id);
+            return shape;
+          }
+          continue;
+        }
+        
+        // Handle text shapes
         if (shape.type === 'text') {
           const width = shape.width || 100;
           const height = shape.height || 30;
@@ -1171,6 +1575,8 @@ export default {
           }
           continue;
         }
+        
+        // Handle circle shapes
         if (shape.type === 'circle') {
           const radius = Math.sqrt(shape.width ** 2 + shape.height ** 2);
           const distance = Math.sqrt((x - shape.x) ** 2 + (y - shape.y) ** 2);
@@ -1179,6 +1585,8 @@ export default {
           }
           continue;
         }
+        
+        // Handle ellipse shapes
         if (shape.type === 'ellipse') {
           const centerX = shape.x + shape.width / 2;
           const centerY = shape.y + shape.height / 2;
@@ -1191,6 +1599,8 @@ export default {
           }
           continue;
         }
+        
+        // Handle line and arrow shapes
         if (shape.type === 'line' || shape.type === 'arrow') {
           const x1 = shape.x;
           const y1 = shape.y;
@@ -1207,6 +1617,8 @@ export default {
           }
           continue;
         }
+        
+        // Handle pen shapes
         if (shape.type === 'pen' && shape.points && shape.points.length > 1) {
           for (let j = 1; j < shape.points.length; j++) {
             const x1 = shape.points[j-1][0];
@@ -1225,6 +1637,8 @@ export default {
           }
           continue;
         }
+        
+        // Default rectangle hit test for all other shapes
         if (x >= shape.x - buffer && 
             x <= shape.x + shape.width + buffer && 
             y >= shape.y - buffer && 
@@ -1232,6 +1646,7 @@ export default {
           return shape;
         }
       }
+      
       return null;
     },
     /**
@@ -1298,6 +1713,7 @@ export default {
           `Current tool: ${this.tool || 'none'}`,
           `Cursor: ${Math.round(this.cursorX)}, ${Math.round(this.cursorY)}`,
           `Grid size: ${this.gridSize}`,
+          `Grid type: ${this.gridType}`,
           `Snap to grid: ${this.snapToGrid ? 'ON' : 'OFF'}`
         ];
         
@@ -1401,12 +1817,224 @@ export default {
       // Toggle debug overlay
       this.showDebugOverlay = !this.showDebugOverlay;
       
-      console.log('Debug overlay toggled:', this.showDebugOverlay);
+      // If we're showing the debug overlay, center it on the canvas
+      if (this.showDebugOverlay) {
+        // Center the debug overlay
+        const centerX = Math.round((this.canvasWidth - this.debugInfo.size.width) / 2);
+        const centerY = Math.round((this.canvasHeight - this.debugInfo.size.height) / 2);
+        
+        this.debugInfo.position = {
+          x: centerX,
+          y: centerY
+        };
+        
+        // Reset the drag state
+        this.debugInfo.isDragging = false;
+        this.debugInfo.dragStart = { x: 0, y: 0 };
+        
+        console.log('Debug overlay centered at:', this.debugInfo.position, 'Canvas size:', this.canvasWidth, this.canvasHeight);
+      }
+    },
+    
+    /**
+     * Force the tool to select mode
+     * This is a utility method to ensure the tool is properly reset
+     */
+    forceSelectMode() {
+      console.log('Forcing select mode');
+      
+      // Only emit events - don't try to modify the prop directly
+      this.$emit('update:tool', 'select');
+      this.$emit('tool-change', 'select');
+      
+      // Directly manipulate the canvas element's class
+      const canvas = this.$refs.canvas;
+      if (canvas) {
+        // Remove any cursor classes
+        canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'force-hand-cursor', 'active');
+        
+        // Add the select cursor class
+        canvas.classList.add('cursor-select');
+        
+        console.log('Canvas classes after direct manipulation:', canvas.className);
+      }
       
       // Reset any active drawing or selection
       this.isDrawing = false;
       this.isDragging = false;
       this.isResizing = false;
+      this.isRotating = false;
+      this.currentShape = null;
+      this.selectionStart = null;
+      
+      // Force a render to update the cursor
+      this.render();
+      
+      // If we're showing the debug overlay, test shape movement
+      if (this.showDebugOverlay) {
+        this.testShapeMovement();
+      }
+    },
+    
+    /**
+     * Direct method to force select mode with direct DOM manipulation
+     * This is a more aggressive approach to ensure the cursor changes
+     */
+    forceSelectModeDirectly() {
+      console.log('DIRECTLY forcing select mode');
+      
+      // Only emit events - don't try to modify the prop directly
+      this.$emit('update:tool', 'select');
+      this.$emit('tool-change', 'select');
+      
+      // Directly manipulate the canvas element's class
+      const canvas = this.$refs.canvas;
+      if (canvas) {
+        // Remove any cursor classes
+        canvas.classList.remove('cursor-hand', 'cursor-hand-active', 'cursor-rectangle', 
+          'cursor-ellipse', 'cursor-line', 'cursor-pen', 'cursor-text', 'cursor-zoom-in', 
+          'cursor-zoom-out', 'cursor-eraser', 'cursor-image', 'cursor-shape', 'cursor-polygon');
+        
+        // Add the select cursor class
+        canvas.classList.add('cursor-select');
+        
+        console.log('Canvas classes after direct manipulation:', canvas.className);
+      }
+      
+      // Reset any active states
+      this.isDrawing = false;
+      this.isDragging = false;
+      this.isResizing = false;
+      this.isRotating = false;
+      this.currentShape = null;
+      this.selectionStart = null;
+      this.resizeHandle = null;
+      
+      // Force a render
+      this.render();
+      
+      // Log the current state
+      console.log('Current tool after direct force:', this.tool);
+    },
+    
+    /**
+     * Test function to create a shape and move it programmatically
+     */
+    testShapeMovement() {
+      console.log('Testing shape movement...');
+      
+      // Create a test shape
+      const testShape = {
+        id: 'test-shape-' + Date.now(),
+        type: 'rectangle',
+        x: 200,
+        y: 200,
+        width: 150,
+        height: 100,
+        rotation: 0,
+        lineWidth: 2,
+        stroke: '#000000',
+        fill: '#ff0000',
+        selectable: true,
+        movable: true,
+        layerId: this.activeLayer ? this.activeLayer.id : 'layer-0'
+      };
+      
+      console.log('Created test shape:', testShape);
+      
+      // Add the shape to the canvas
+      const updatedShapes = [...this.shapes, testShape];
+      this.$emit('shape-added', updatedShapes);
+      
+      // Force a render to show the shape
+      this.render();
+      
+      // Wait a moment, then move the shape
+      setTimeout(() => {
+        console.log('Moving test shape...');
+        
+        // Find the shape in the shapes array
+        const shapeToMove = this.shapes.find(s => s.id === testShape.id);
+        
+        if (shapeToMove) {
+          console.log('Found shape to move:', shapeToMove);
+          
+          // Move the shape
+          shapeToMove.x += 100;
+          shapeToMove.y += 100;
+          
+          // Update the shape in the canvas
+          const movedShapes = this.shapes.map(s => 
+            s.id === shapeToMove.id ? shapeToMove : s
+          );
+          
+          console.log('Emitting shape-updated event with moved shape');
+          this.$emit('shape-updated', movedShapes);
+          
+          // Force a render to show the moved shape
+          this.render();
+        } else {
+          console.error('Could not find test shape to move');
+        }
+      }, 1000);
+    },
+    
+    /**
+     * Handles file imports (SVG or JSON)
+     * @param {Event} event - The file input change event
+     * @param {string} type - The type of file being imported ('svg' or 'json')
+     */
+    handleFileImport(event, type) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      console.log(`Importing ${type} file:`, file.name);
+      
+      // Reset the file input so the same file can be imported again
+      event.target.value = '';
+      
+      // Use the canvasStore to handle the import
+      this.$emit('import-file', { file, type });
+    },
+    
+    /**
+     * Adds a predefined shape from the library
+     * @param {Object} shapeData - The shape data to add
+     */
+    addLibraryShape(shapeData) {
+      if (!shapeData || !shapeData.type) return;
+      
+      console.log('Adding library shape:', shapeData);
+      
+      // Position the shape in the center of the visible canvas
+      const centerX = (this.canvasWidth / 2 - this.offsetX) / this.zoom;
+      const centerY = (this.canvasHeight / 2 - this.offsetY) / this.zoom;
+      
+      // Ensure all required properties have valid values
+      const shape = {
+        ...shapeData,
+        x: centerX,
+        y: centerY,
+        width: shapeData.width || 100,
+        height: shapeData.height || 100,
+        stroke: (shapeData.stroke && shapeData.stroke !== '') ? shapeData.stroke : '#000000',
+        fill: (shapeData.fill && shapeData.fill !== '') ? shapeData.fill : '#ff0000',
+        lineWidth: shapeData.lineWidth || 2
+      };
+      
+      // Double-check fill and stroke are valid
+      if (!shape.fill || shape.fill === '') {
+        shape.fill = '#ff0000'; // Default red
+        console.log('Added missing fill property to library shape');
+      }
+      
+      if (!shape.stroke || shape.stroke === '') {
+        shape.stroke = '#000000'; // Default black
+        console.log('Added missing stroke property to library shape');
+      }
+      
+      // Emit event to add the shape
+      this.$emit('add-shape', shape);
       this.isRotating = false;
       this.selectionStart = null;
       this.currentShape = null; // Clear any in-progress shape
@@ -1421,9 +2049,9 @@ export default {
     },
     
     /**
-     * Legacy method for backward compatibility
+     * Legacy method for backward compatibility - renamed to avoid conflict with data property
      */
-    handleDebugInfoEvent(e) {
+    showDebugInfoPanel(e) {
       // Prevent the event from creating shapes
       if (e) {
         e.stopPropagation();
@@ -1490,46 +2118,36 @@ export default {
       console.log('Canvas focused');
     },
     createTestShapes() {
-      const testShapes = [
-        {
-          id: Date.now() + 1,
-          type: 'rectangle',
-          x: 100,
-          y: 100,
-          width: 100,
-          height: 80,
-          rotation: 0,
-          lineWidth: 2,
-          stroke: '#000000',
-          fill: '#ff0000'
-        },
-        {
-          id: Date.now() + 2,
-          type: 'circle',
-          x: 300,
-          y: 150,
-          width: 50,
-          height: 50,
-          rotation: 0,
-          lineWidth: 2,
-          stroke: '#000000',
-          fill: '#0000ff'
-        },
-        {
-          id: Date.now() + 3,
-          type: 'rectangle',
-          x: 200,
-          y: 250,
-          width: 120,
-          height: 60,
-          rotation: 0,
-          lineWidth: 2,
-          stroke: '#000000',
-          fill: '#00ff00'
-        }
-      ];
-      this.$emit('shape-added', [...this.shapes, ...testShapes]);
-      console.log('Created test shapes:', testShapes.length);
+      // Create a single test shape with all properties explicitly set
+      const testShape = {
+        id: 'test-shape-' + Date.now(),
+        type: 'rectangle',
+        x: 200,
+        y: 200,
+        width: 150,
+        height: 100,
+        rotation: 0,
+        lineWidth: 2,
+        stroke: '#000000',
+        fill: '#ff0000',
+        selectable: true,
+        movable: true,
+        layerId: this.activeLayer ? this.activeLayer.id : 'layer-0'
+      };
+      
+      console.log('Creating test shape with explicit properties:', testShape);
+      
+      // Add the shape to the canvas
+      this.$emit('shape-added', [...this.shapes, testShape]);
+      
+      // Select the shape
+      this.localSelectedShapes = [testShape];
+      this.$emit('shapes-selected', [testShape]);
+      
+      console.log('Test shape created and selected');
+      
+      // Force a render to show the shape
+      this.render();
     },
     groupSelectedShapes() {
       if (this.localSelectedShapes.length < 2) {
@@ -1621,6 +2239,369 @@ export default {
       const hitRadius = 15 / this.zoom;
       return handles.find(h => Math.hypot(x - h.x, y - h.y) < hitRadius);
     },
+    
+    /**
+     * Converts a hex color string to an RGB string
+     * @param {string} hex - Hex color string (e.g., "#FF0000")
+     * @returns {string} RGB string (e.g., "255, 0, 0")
+     */
+    _hexToRgb(hex) {
+      // Remove the hash if it exists
+      hex = hex.replace(/^#/, '');
+      
+      // Parse the hex values
+      const bigint = parseInt(hex, 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      
+      return `${r}, ${g}, ${b}`;
+    },
+    
+    /**
+     * Draws a square grid
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     * @param {number} step - The grid step size
+     */
+    _drawSquareGrid(ctx, step) {
+      // Draw vertical grid lines
+      for (let x = 0; x <= this.canvasWidth; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, this.canvasHeight);
+        ctx.stroke();
+      }
+      
+      // Draw horizontal grid lines
+      for (let y = 0; y <= this.canvasHeight; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(this.canvasWidth, y);
+        ctx.stroke();
+      }
+    },
+    
+    /**
+     * Draws an isometric grid
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     * @param {number} step - The grid step size
+     */
+    _drawIsometricGrid(ctx, step) {
+      console.log('Drawing isometric grid with step:', step);
+      const width = this.canvasWidth;
+      const height = this.canvasHeight;
+      
+      // Calculate the isometric step (30-degree angle)
+      const isoStep = step;
+      const verticalStep = Math.sqrt(3) * isoStep / 2;
+      
+      // Constrain the grid to the canvas area
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height);
+      ctx.clip();
+      
+      // Draw horizontal lines
+      for (let y = 0; y <= height; y += verticalStep * 2) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      
+      // Draw the first set of diagonal lines (bottom-left to top-right)
+      const angle1 = Math.PI / 6; // 30 degrees
+      for (let i = -Math.ceil(height/verticalStep); i <= Math.ceil((width + height)/verticalStep); i++) {
+        const offset = i * verticalStep * 2;
+        ctx.beginPath();
+        
+        // Calculate start and end points within canvas bounds
+        const startX = Math.max(0, -offset / Math.tan(angle1));
+        const startY = Math.max(0, offset);
+        const endX = Math.min(width, (height - offset) / Math.tan(angle1));
+        const endY = Math.min(height, offset + width * Math.tan(angle1));
+        
+        if (startX < width && startY < height && endX > 0 && endY > 0) {
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+      }
+      
+      // Draw the second set of diagonal lines (bottom-right to top-left)
+      const angle2 = Math.PI / 6; // 30 degrees
+      for (let i = -Math.ceil((width + height)/verticalStep); i <= Math.ceil(width/verticalStep); i++) {
+        const offset = i * verticalStep * 2;
+        ctx.beginPath();
+        
+        // Calculate start and end points within canvas bounds
+        const startX = Math.max(0, width - (height + offset) / Math.tan(angle2));
+        const startY = Math.max(0, -offset + width * Math.tan(angle2));
+        const endX = Math.min(width, width - offset / Math.tan(angle2));
+        const endY = Math.min(height, offset + width * Math.tan(angle2));
+        
+        if (startX < width && startY < height && endX > 0 && endY > 0) {
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+      }
+      
+      // Add a note about isometric view
+      ctx.font = '12px Arial';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText('Isometric Grid (view remains 2D)', 10, height - 10);
+    },
+    
+    /**
+     * Draws a perspective grid
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     * @param {number} step - The grid step size
+     */
+    _drawPerspectiveGrid(ctx, step) {
+      console.log('Drawing perspective grid with step:', step);
+      const width = this.canvasWidth;
+      const height = this.canvasHeight;
+      
+      // Constrain the grid to the canvas area
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height);
+      ctx.clip();
+      
+      // Define the vanishing point
+      const vpX = width / 2;
+      const vpY = height / 2;
+      
+      // Draw a cross at the vanishing point
+      const vpSize = 5 / this.zoom;
+      ctx.beginPath();
+      ctx.moveTo(vpX - vpSize, vpY);
+      ctx.lineTo(vpX + vpSize, vpY);
+      ctx.moveTo(vpX, vpY - vpSize);
+      ctx.lineTo(vpX, vpY + vpSize);
+      ctx.stroke();
+      
+      // Draw horizontal lines
+      for (let y = 0; y <= height; y += step) {
+        // Skip the vanishing point line
+        if (Math.abs(y - vpY) < step / 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      
+      // Draw vertical lines
+      for (let x = 0; x <= width; x += step) {
+        // Skip the vanishing point line
+        if (Math.abs(x - vpX) < step / 2) continue;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      
+      // Use a thicker line for the perspective lines
+      const originalLineWidth = ctx.lineWidth;
+      ctx.lineWidth = originalLineWidth * 1.5;
+      
+      // Draw perspective lines from corners to vanishing point
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(width, 0);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(width, height);
+      ctx.lineTo(vpX, vpY);
+      ctx.stroke();
+      
+      // Restore original line width
+      ctx.lineWidth = originalLineWidth;
+      
+      // Draw perspective grid lines
+      const numLines = 20; // Increase the number of lines for better visibility
+      for (let i = 1; i < numLines; i++) {
+        const ratio = i / numLines;
+        
+        // Top edge to vanishing point
+        ctx.beginPath();
+        ctx.moveTo(width * ratio, 0);
+        ctx.lineTo(vpX, vpY);
+        ctx.stroke();
+        
+        // Bottom edge to vanishing point
+        ctx.beginPath();
+        ctx.moveTo(width * ratio, height);
+        ctx.lineTo(vpX, vpY);
+        ctx.stroke();
+        
+        // Left edge to vanishing point
+        ctx.beginPath();
+        ctx.moveTo(0, height * ratio);
+        ctx.lineTo(vpX, vpY);
+        ctx.stroke();
+        
+        // Right edge to vanishing point
+        ctx.beginPath();
+        ctx.moveTo(width, height * ratio);
+        ctx.lineTo(vpX, vpY);
+        ctx.stroke();
+      }
+      
+      // Add a note about perspective view
+      ctx.font = '12px Arial';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText('Perspective Grid (view remains 2D)', 10, height - 10);
+    },
+    
+    /**
+     * Draws a radial grid
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     * @param {number} step - The grid step size
+     */
+    _drawRadialGrid(ctx, step) {
+      console.log('Drawing radial grid with step:', step);
+      const width = this.canvasWidth;
+      const height = this.canvasHeight;
+      
+      // Constrain the grid to the canvas area
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height);
+      ctx.clip();
+      
+      // Define the center point
+      const centerX = width / 2;
+      const centerY = height / 2;
+      
+      // Calculate the maximum radius (distance to the farthest corner)
+      const maxRadius = Math.min(
+        Math.sqrt(Math.pow(width, 2) + Math.pow(height, 2)) / 2,
+        Math.max(width, height)
+      );
+      
+      // Draw a cross at the center point
+      const centerSize = 5 / this.zoom;
+      ctx.beginPath();
+      ctx.moveTo(centerX - centerSize, centerY);
+      ctx.lineTo(centerX + centerSize, centerY);
+      ctx.moveTo(centerX, centerY - centerSize);
+      ctx.lineTo(centerX, centerY + centerSize);
+      ctx.stroke();
+      
+      // Use a thicker line for the main axes
+      const originalLineWidth = ctx.lineWidth;
+      
+      // Draw concentric circles
+      for (let r = step; r <= maxRadius; r += step) {
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, r, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      
+      // Draw radial lines
+      const numRadials = 24; // Number of radial lines (every 15 degrees)
+      
+      for (let i = 0; i < numRadials; i++) {
+        const angle = (i * 2 * Math.PI) / numRadials;
+        
+        // Calculate intersection with canvas edge
+        let endX, endY;
+        
+        // Use thicker lines for the main axes (0°, 90°, 180°, 270°)
+        if (i % 6 === 0) {
+          ctx.lineWidth = originalLineWidth * 1.5;
+        } else {
+          ctx.lineWidth = originalLineWidth;
+        }
+        
+        // Find intersection with canvas boundary
+        if (Math.abs(Math.cos(angle)) < 0.0001) {
+          // Vertical line
+          endX = centerX;
+          endY = (Math.sin(angle) > 0) ? height : 0;
+        } else if (Math.abs(Math.sin(angle)) < 0.0001) {
+          // Horizontal line
+          endX = (Math.cos(angle) > 0) ? width : 0;
+          endY = centerY;
+        } else {
+          // Calculate intersections with all four edges
+          const intersections = [
+            // Top edge (y = 0)
+            { x: centerX + (0 - centerY) / Math.tan(angle), y: 0 },
+            // Bottom edge (y = height)
+            { x: centerX + (height - centerY) / Math.tan(angle), y: height },
+            // Left edge (x = 0)
+            { x: 0, y: centerY + (0 - centerX) * Math.tan(angle) },
+            // Right edge (x = width)
+            { x: width, y: centerY + (width - centerX) * Math.tan(angle) }
+          ];
+          
+          // Filter valid intersections (within canvas bounds)
+          const validIntersections = intersections.filter(p => 
+            p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height
+          );
+          
+          // Find the farthest valid intersection
+          let maxDist = 0;
+          for (const p of validIntersections) {
+            const dist = Math.pow(p.x - centerX, 2) + Math.pow(p.y - centerY, 2);
+            if (dist > maxDist) {
+              maxDist = dist;
+              endX = p.x;
+              endY = p.y;
+            }
+          }
+        }
+        
+        if (endX !== undefined && endY !== undefined) {
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+      }
+      
+      // Restore original line width
+      ctx.lineWidth = originalLineWidth;
+      
+      // Add angle labels
+      ctx.font = `${12 / this.zoom}px Arial`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // Add labels for the main angles
+      const labelRadius = maxRadius * 0.7;
+      const angles = [0, 90, 180, 270];
+      const labels = ['0°', '90°', '180°', '270°'];
+      
+      for (let i = 0; i < angles.length; i++) {
+        const angle = (angles[i] * Math.PI) / 180;
+        const labelX = centerX + Math.cos(angle) * labelRadius;
+        const labelY = centerY + Math.sin(angle) * labelRadius;
+        
+        ctx.fillText(labels[i], labelX, labelY);
+      }
+      
+      // Add a note about radial view
+      ctx.font = '12px Arial';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('Radial Grid (view remains 2D)', 10, height - 10);
+    },
     render() {
       const startTime = performance.now();
       const ctx = this.ctx;
@@ -1636,6 +2617,8 @@ export default {
         if (this.staticCanvasDirty || 
             this.lastGridSize !== this.gridSize || 
             this.lastGridOpacity !== this.gridOpacity ||
+            this.lastGridType !== this.gridType ||
+            this.lastGridColor !== this.gridColor ||
             this.lastCanvasWidth !== this.canvasWidth ||
             this.lastCanvasHeight !== this.canvasHeight ||
             this.lastZoom !== this.zoom) {
@@ -1646,27 +2629,11 @@ export default {
           // Update tracking variables
           this.lastGridSize = this.gridSize;
           this.lastGridOpacity = this.gridOpacity;
+          this.lastGridType = this.gridType;
+          this.lastGridColor = this.gridColor;
           this.lastCanvasWidth = this.canvasWidth;
           this.lastCanvasHeight = this.canvasHeight;
           this.lastZoom = this.zoom;
-
-        // Draw all shapes
-        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-        this.shapes.forEach(shape => {
-          if (shape.type === 'image') {
-            if (!shape.imgEl || !shape.imageLoaded || shape.imageError) return;
-            ctx.drawImage(shape.imgEl, shape.x, shape.y, shape.width, shape.height);
-          } else {
-            // Basic shape rendering (rect fallback)
-            ctx.fillStyle = shape.fill || '#cccccc';
-            ctx.strokeStyle = shape.stroke || '#333333';
-            ctx.lineWidth = shape.lineWidth || 1;
-            ctx.beginPath();
-            ctx.rect(shape.x, shape.y, shape.width, shape.height);
-            ctx.fill();
-            ctx.stroke();
-          }
-        });
           this.staticCanvasDirty = false;
         }
         
@@ -1720,24 +2687,37 @@ export default {
       // Draw grid if enabled
       if (this.gridSize) {
         const step = this.gridSize;
-        ctx.strokeStyle = `rgba(0, 0, 0, ${this.gridOpacity})`;
+        
+        // Set grid color and line width
+        const opacity = this.gridOpacity || 0.5; // Default to 0.5 if undefined
+        ctx.strokeStyle = this.gridColor ? `rgba(${this._hexToRgb(this.gridColor)}, ${opacity})` : `rgba(0, 0, 0, ${opacity})`;
         ctx.lineWidth = 0.5 / this.zoom;
         
-        // Draw vertical grid lines
-        for (let x = 0; x <= this.canvasWidth; x += step) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, this.canvasHeight);
-          ctx.stroke();
+        // Save context before drawing grid
+        ctx.save();
+        
+        console.log(`Drawing grid: type=${this.gridType}, size=${step}, opacity=${opacity}, color=${this.gridColor}`);
+        
+        // Draw the appropriate grid type
+        const gridType = this.gridType || 'square'; // Default to square if undefined
+        switch (gridType) {
+          case 'isometric':
+            this._drawIsometricGrid(ctx, step);
+            break;
+          case 'perspective':
+            this._drawPerspectiveGrid(ctx, step);
+            break;
+          case 'radial':
+            this._drawRadialGrid(ctx, step);
+            break;
+          case 'square':
+          default:
+            this._drawSquareGrid(ctx, step);
+            break;
         }
         
-        // Draw horizontal grid lines
-        for (let y = 0; y <= this.canvasHeight; y += step) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(this.canvasWidth, y);
-          ctx.stroke();
-        }
+        // Restore context after drawing grid
+        ctx.restore();
       }
       
       // Restore context state
@@ -1773,7 +2753,9 @@ export default {
         text: [],
         image: [],
         pen: [],
-        group: []
+        group: [],
+        polygon: [], // Add support for polygon shape type
+        select: []   // Add support for select shape type
       };
       this.shapes.forEach(shape => {
         if (shapesByType[shape.type]) {
@@ -1854,8 +2836,10 @@ export default {
             }
             ctx.beginPath();
             ctx.lineWidth = shape.lineWidth / this.zoom;
-            ctx.strokeStyle = shape.stroke === 'transparent' ? '#00000000' : shape.stroke;
-            ctx.fillStyle = shape.fill === 'transparent' ? '#00000000' : shape.fill;
+            // Handle empty or invalid stroke values
+            ctx.strokeStyle = this.safeColor(shape.stroke, '#00000000', shape, false);
+            // Handle empty or invalid fill values
+            ctx.fillStyle = this.safeColor(shape.fill, '#00000000', shape, true);
             if (shape.lineStyle) {
               this.applyLineStyle(ctx, shape.lineStyle, shape.lineWidth / this.zoom);
             }
@@ -1893,7 +2877,8 @@ export default {
             ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
             ctx.textAlign = shape.textAlign || 'left';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = shape.fill && shape.fill !== 'transparent' ? shape.fill : '#000000';
+            // Handle empty or invalid fill values for text
+            ctx.fillStyle = this.safeColor(shape.fill, '#000000', shape, true); // Default to black for text
             ctx.fillText(shape.text, shape.x, shape.y);
             if (shape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(shape.text).width;
@@ -1919,10 +2904,14 @@ export default {
             console.log('Rendering image shape:', {
               id: shape.id,
               layerId: shape.layerId,
-              src: shape.src,
+              src: shape.src ? shape.src.substring(0, 30) + '...' : 'undefined', // Truncate for logging
               hasImage: !!shape.image,
               isImageElement: shape.image instanceof HTMLImageElement,
               isComplete: shape.image?.complete,
+              width: shape.width,
+              height: shape.height,
+              x: shape.x,
+              y: shape.y,
               isLoading: shape.isLoading,
               imageError: shape.imageError
             });
@@ -1930,6 +2919,12 @@ export default {
             // Successfully loaded image case
             if (shape.image instanceof HTMLImageElement && shape.image.complete) {
               try {
+                // Draw a border around the image for visibility
+                ctx.strokeStyle = '#333333';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+                
+                // Draw the image
                 ctx.drawImage(shape.image, shape.x, shape.y, shape.width, shape.height);
                 console.log('PNG image drawn successfully:', shape.id);
               } catch (error) {
@@ -1937,6 +2932,40 @@ export default {
                 this.drawImagePlaceholder(ctx, shape, 'error');
               }
             } 
+            // Try to load the image if it's not loaded yet
+            else if (shape.src && (!shape.image || !shape.image.complete)) {
+              console.log('Image not loaded yet, creating new Image object');
+              
+              // Create a new image object
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              
+              // Set up onload handler
+              img.onload = () => {
+                console.log('Image loaded dynamically:', shape.id);
+                // Update the shape with the loaded image
+                shape.image = img;
+                shape.isLoading = false;
+                shape.imageError = null;
+                // Force a render to show the image
+                this.render();
+              };
+              
+              // Set up error handler
+              img.onerror = (err) => {
+                console.error('Failed to load image dynamically:', err);
+                shape.imageError = true;
+                shape.isLoading = false;
+                this.render();
+              };
+              
+              // Set the source to load the image
+              shape.isLoading = true;
+              img.src = shape.src;
+              
+              // Draw a placeholder while loading
+              this.drawImagePlaceholder(ctx, shape, 'loading');
+            }
             // Loading state
             else if (shape.isLoading) {
               this.drawImagePlaceholder(ctx, shape, 'loading');
@@ -2143,8 +3172,10 @@ export default {
           ctx.setLineDash([]);
         } else {
           ctx.lineWidth = this.currentShape.lineWidth / this.zoom;
-          ctx.strokeStyle = this.currentShape.stroke === 'transparent' ? '#00000000' : this.currentShape.stroke;
-          ctx.fillStyle = this.currentShape.fill === 'transparent' ? '#00000000' : this.currentShape.fill;
+          // Handle empty or invalid stroke values
+          ctx.strokeStyle = this.safeColor(this.currentShape.stroke, '#00000000', this.currentShape, false);
+          // Handle empty or invalid fill values
+          ctx.fillStyle = this.safeColor(this.currentShape.fill, '#00000000', this.currentShape, true);
           if (this.currentShape.lineStyle) {
             this.applyLineStyle(ctx, this.currentShape.lineStyle, this.currentShape.lineWidth / this.zoom);
           }
@@ -2181,7 +3212,7 @@ export default {
             ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
             ctx.textAlign = this.currentShape.textAlign || 'left';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = this.currentShape.fill && this.currentShape.fill !== 'transparent' ? this.currentShape.fill : '#000000';
+            ctx.fillStyle = this.safeColor(this.currentShape.fill, '#000000', this.currentShape, true); // Default to black for text
             ctx.fillText(this.currentShape.text, this.currentShape.x, this.currentShape.y);
             if (this.currentShape.textDecoration === 'underline') {
               const textWidth = ctx.measureText(this.currentShape.text).width;
@@ -2328,11 +3359,13 @@ export default {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           
           // Get debug overlay position and size
-          const x = this.debugInfo.position.x;
-          const y = this.debugInfo.position.y;
+          const x = Math.round(this.debugInfo.position.x);
+          const y = Math.round(this.debugInfo.position.y);
           const width = this.debugInfo.size.width;
           const height = this.debugInfo.size.height;
           const headerHeight = 30;
+          
+          console.log('Debug overlay drawing at exact position:', x, y, 'with size:', width, height);
           
           // Draw semi-transparent background
           ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -2375,6 +3408,7 @@ export default {
             `Current tool: ${this.tool || 'none'}`,
             `Cursor: ${Math.round(this.cursorX)}, ${Math.round(this.cursorY)}`,
             `Grid size: ${this.gridSize}`,
+            `Grid type: ${this.gridType}`,
             `Snap to grid: ${this.snapToGrid ? 'ON' : 'OFF'}`
           ];
           
@@ -2413,14 +3447,50 @@ export default {
         Math.abs(offsetXDiff) > 0.1 || 
         Math.abs(offsetYDiff) > 0.1 ||
         this.gridSize !== this.lastGridSize || 
-        this.gridOpacity !== this.lastGridOpacity;
+        this.gridOpacity !== this.lastGridOpacity ||
+        this.gridType !== this.lastGridType ||
+        this.gridColor !== this.lastGridColor;
       if (needsRender) {
         this.lastGridSize = this.gridSize;
         this.lastGridOpacity = this.gridOpacity;
+        this.lastGridType = this.gridType;
+        this.lastGridColor = this.gridColor;
         this.lastZoom = this.zoom;
         this.render();
       }
       requestAnimationFrame(this.animate.bind(this));
+    },
+    
+    /**
+     * Safely handles color values, converting 'transparent' to a valid rgba format
+     * @param {string|null} color - The color value to process
+     * @param {string} defaultColor - The default color to use if the input is invalid
+     * @param {Object} shape - The shape object that may contain _isTransparent flag
+     * @returns {string} - A valid color string
+     */
+    safeColor(color, defaultColor = 'rgba(0,0,0,0)', shape = null, isFill = true) {
+      // Check if the shape has the appropriate transparency flag set
+      if (shape) {
+        if (isFill && shape._isFillTransparent === true) {
+          console.log('Using transparent fill for shape:', shape.id);
+          return 'rgba(0,0,0,0)';
+        } else if (!isFill && shape._isStrokeTransparent === true) {
+          console.log('Using transparent stroke for shape:', shape.id);
+          return 'rgba(0,0,0,0)';
+        }
+      }
+      
+      // If color is null, undefined, empty string, or 'transparent', return the default color
+      if (color === null || color === undefined || color === '' || color === 'transparent') {
+        return defaultColor;
+      }
+      
+      // If the color is already in rgba format with 0 alpha, return it as is
+      if (color === 'rgba(0,0,0,0)' || color === 'rgba(255,255,255,0)' || color === '#00000000') {
+        return color;
+      }
+      
+      return color;
     },
     
     /**
@@ -2538,8 +3608,22 @@ export default {
             cacheCtx.lineWidth = fontSize * 0.05;
             cacheCtx.stroke();
           }
-        } else if (shape.type === 'image' && shape.image) {
-          cacheCtx.drawImage(shape.image, 0, 0, shape.width, shape.height);
+        } else if (shape.type === 'image') {
+          // Check if image is a valid HTMLImageElement and is loaded
+          if (shape.image instanceof HTMLImageElement && shape.image.complete) {
+            cacheCtx.drawImage(shape.image, 0, 0, shape.width, shape.height);
+          } else if (shape.src) {
+            // If we have a src but no valid image, create a placeholder
+            cacheCtx.fillStyle = '#f0f0f0';
+            cacheCtx.fillRect(0, 0, shape.width, shape.height);
+            cacheCtx.strokeStyle = '#cccccc';
+            cacheCtx.strokeRect(0, 0, shape.width, shape.height);
+            cacheCtx.fillStyle = '#999999';
+            cacheCtx.textAlign = 'center';
+            cacheCtx.textBaseline = 'middle';
+            cacheCtx.font = '14px Arial';
+            cacheCtx.fillText('Loading Image...', shape.width/2, shape.height/2);
+          }
         } else if (shape.type === 'pen' && shape.points && shape.points.length > 0) {
           cacheCtx.beginPath();
           cacheCtx.moveTo(shape.points[0][0], shape.points[0][1]);
@@ -2744,5 +3828,39 @@ export default {
 
 .debug-active:hover {
   background-color: #388E3C !important;
+}
+
+.import-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.import-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 14px;
+  color: #333;
+}
+
+.import-controls button {
+  padding: 8px 12px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+  margin-top: 5px;
+}Z
+
+.import-controls button:hover {
+  background-color: #d32f2f;
 }
 </style>
