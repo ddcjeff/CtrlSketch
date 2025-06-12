@@ -44,7 +44,7 @@ export default {
     },
     version: {
       type: String,
-      default: __APP_VERSION__ || '2.1.0'
+      default: '2.1.0'
     },
     licenseNumber: {
       type: String,
@@ -65,7 +65,10 @@ export default {
       // Hide component after animation completes
       setTimeout(() => {
         this.visible = false;
-        this.$emit('splash-complete');
+        // Use nextTick to ensure DOM is updated before emitting event
+        this.$nextTick(() => {
+          this.$emit('splash-complete');
+        });
       }, 1000); // Animation duration
     }, this.duration);
   },

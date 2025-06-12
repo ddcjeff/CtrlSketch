@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import './styles/main.css'
-import './styles/glossy.css'
+// Removed glossy.css import as requested
 import './assets/tool-cursors.css'
 
 const app = createApp(App)

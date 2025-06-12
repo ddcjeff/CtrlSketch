@@ -6,7 +6,7 @@
         <select v-model="currentLibraryId" class="bg-gray-800 text-white text-sm rounded-md border border-gray-700 px-2 py-1 mr-2 flex-1">
           <option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{ lib.name }}</option>
         </select>
-        <button @click="showLibraryActions = !showLibraryActions" class="text-gray-400 hover:text-white p-1">
+        <button @click="toggleLibraryActions" class="text-gray-400 hover:text-white p-1 library-actions-btn">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
           </svg>
@@ -14,7 +14,7 @@
       </div>
       
       <!-- Library actions dropdown -->
-      <div v-if="showLibraryActions" class="absolute right-4 top-16 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
+      <div v-if="showLibraryActions" class="absolute right-4 top-16 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10 library-actions-menu">
         <div class="py-1">
           <button @click="createNewLibrary" class="block w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">
             Create New Library
@@ -46,7 +46,7 @@
         </button>
         
         <!-- More actions button -->
-        <button @click="showShapeActions = !showShapeActions" class="ml-1 text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700" title="More Actions">
+        <button @click="toggleShapeActions" class="ml-1 text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700 shape-actions-btn" title="More Actions">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
           </svg>
@@ -54,7 +54,7 @@
       </div>
       
       <!-- Shape actions dropdown -->
-      <div v-if="showShapeActions" class="absolute right-4 top-28 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
+      <div v-if="showShapeActions" class="absolute right-4 top-28 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10 shape-actions-menu">
         <div class="py-1">
           <button @click="importShape" class="block w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700">
             Import Shape
@@ -100,6 +100,8 @@
           @dragstart="onDragStart($event, shape)"
           @click="addShapeToCanvas(shape)"
           @contextmenu.prevent="openShapeContextMenu($event, shape)"
+          @mouseenter="showTooltip($event, shape)"
+          @mouseleave="hideTooltip()"
         >
           <div class="aspect-w-1 aspect-h-1 bg-gray-900 rounded-md mb-2 flex items-center justify-center overflow-hidden">
             <img v-if="shape.thumbnail" :src="shape.thumbnail" :alt="shape.name" class="max-w-full max-h-full object-contain" />
@@ -113,6 +115,17 @@
           
           <!-- Part indicator if it has properties -->
           <div v-if="shape.partProperties" class="absolute top-2 right-2 bg-blue-500 rounded-full w-3 h-3"></div>
+        </div>
+      </div>
+      
+      <!-- Tooltip -->
+      <div v-if="showingTooltip" class="shape-tooltip" :style="tooltipStyle">
+        <div class="tooltip-content">
+          <div class="tooltip-title">{{ tooltipShape.name }}</div>
+          <div v-if="tooltipShape.partProperties" class="tooltip-part-info">
+            <span class="part-label">Part</span>
+            <span v-if="tooltipShape.partProperties.partNumber" class="part-number">{{ tooltipShape.partProperties.partNumber }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -332,6 +345,13 @@ export default {
         { id: 'hvac', name: 'HVAC Components' },
         { id: 'electrical', name: 'Electrical Symbols' }
       ],
+      // Tooltip data
+      showingTooltip: false,
+      tooltipShape: null,
+      tooltipStyle: {
+        top: '0px',
+        left: '0px'
+      },
       shapes: [
         { 
           id: 'shape1', 
@@ -483,6 +503,17 @@ export default {
     // Close context menus when clicking outside
     document.addEventListener('click', this.closeMenus);
     
+    // Add a direct click handler to the document body
+    document.body.addEventListener('click', (event) => {
+      // Only handle clicks directly on the body
+      if (event.target === document.body) {
+        console.log('Direct click on body detected');
+        this.showLibraryActions = false;
+        this.showShapeActions = false;
+        this.showContextMenu = false;
+      }
+    });
+    
     // Load libraries and shapes from localStorage if available
     this.loadData();
     
@@ -512,8 +543,45 @@ export default {
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeMenus);
+    
+    // Remove the direct body click handler
+    document.body.removeEventListener('click', (event) => {
+      if (event.target === document.body) {
+        this.showLibraryActions = false;
+        this.showShapeActions = false;
+        this.showContextMenu = false;
+      }
+    });
   },
   methods: {
+    // Tooltip methods
+    showTooltip(event, shape) {
+      this.tooltipShape = shape;
+      this.tooltipStyle = {
+        top: `${event.clientY + 10}px`,
+        left: `${event.clientX + 10}px`
+      };
+      this.showingTooltip = true;
+    },
+    
+    hideTooltip() {
+      this.showingTooltip = false;
+      this.tooltipShape = null;
+    },
+    
+    // UI Actions
+    toggleLibraryActions(event) {
+      console.log('Toggle library actions clicked');
+      this.showLibraryActions = !this.showLibraryActions;
+      event.stopPropagation(); // Prevent the click from bubbling up
+    },
+    
+    toggleShapeActions(event) {
+      console.log('Toggle shape actions clicked');
+      this.showShapeActions = !this.showShapeActions;
+      event.stopPropagation(); // Prevent the click from bubbling up
+    },
+    
     // Library management
     createNewLibrary() {
       this.showLibraryActions = false;
@@ -1071,23 +1139,49 @@ export default {
         return;
       }
       
+      // Prompt for a name
+      this.renameType = 'new-shape';
+      this.renameDialogTitle = 'Add Shape to Library';
+      this.renameDialogPlaceholder = 'Shape name';
+      this.renameValue = 'Custom Shape ' + this.shapes.filter(s => s.libraryId === this.currentLibraryId).length;
+      this.showRenameDialog = true;
+      
+      // The actual adding will happen in confirmRename when the user confirms the name
+    },
+    
+    /**
+     * Add a shape with the given name to the library
+     */
+    addSelectedShapeWithName(name) {
       // Create a new shape from the selected shapes
       const id = 'shape_' + Date.now();
-      const name = 'Custom Shape ' + this.shapes.filter(s => s.libraryId === this.currentLibraryId).length;
+      
+      // If there's only one shape selected, use its data directly
+      // Otherwise, create a group
+      let shapeData;
+      let thumbnail;
+      
+      if (this.selectedShapes.length === 1) {
+        const shape = this.selectedShapes[0];
+        shapeData = this.convertCanvasShapeToLibraryShape(shape);
+        thumbnail = this.generateThumbnail(shape);
+      } else {
+        shapeData = { 
+          type: 'group', 
+          shapes: this.selectedShapes.map(s => this.convertCanvasShapeToLibraryShape(s))
+        };
+        thumbnail = this.generateThumbnail({ type: 'group' });
+      }
       
       this.shapes.push({
         id,
         libraryId: this.currentLibraryId,
         name,
-        data: { 
-          type: 'group', 
-          shapes: JSON.parse(JSON.stringify(this.selectedShapes))
-        },
-        thumbnail: null // We'll generate this later
+        data: shapeData,
+        thumbnail: thumbnail
       });
       
       this.saveData();
-      this.generateThumbnails();
       
       this.$emit('notification', {
         type: 'success',
@@ -1254,6 +1348,12 @@ export default {
             duration: 3000
           });
         }
+      } else if (this.renameType === 'new-shape') {
+        // Add the selected shapes to the library with the given name
+        this.addSelectedShapeWithName(this.renameValue.trim());
+      } else if (this.renameType === 'new-library') {
+        // Create a new library with the given name
+        this.createLibraryWithName(this.renameValue.trim());
       }
       
       this.showRenameDialog = false;
@@ -1359,10 +1459,10 @@ export default {
       // Create a new library shape
       const newLibraryShape = {
         id: 'shape_' + Date.now(),
-        libraryId: this.selectedLibrary,
+        libraryId: this.currentLibraryId, // Use the currently selected library
         name: shapeName,
         data: this.convertCanvasShapeToLibraryShape(shape),
-        thumbnail: null, // We'll generate this later
+        thumbnail: this.generateThumbnail(shape),
         partProperties: shape.partProperties || null
       };
       
@@ -1449,6 +1549,133 @@ export default {
         default:
           return { type: shape.type };
       }
+    },
+    
+    /**
+     * Generate a thumbnail for a shape
+     * This is a placeholder - in a real implementation, you would render the shape to a canvas
+     * and convert it to a data URL
+     */
+    generateThumbnail(shape) {
+      // Create a small canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      
+      // Fill with a background
+      ctx.fillStyle = '#1F2937';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw a simple representation based on shape type
+      ctx.fillStyle = shape.fill || '#3B82F6';
+      ctx.strokeStyle = shape.stroke || '#FFFFFF';
+      ctx.lineWidth = shape.strokeWidth || 2;
+      
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      
+      switch (shape.type) {
+        case 'rectangle':
+        case 'rect':
+          const width = Math.min(70, shape.width || 50);
+          const height = Math.min(70, shape.height || 30);
+          ctx.fillRect(centerX - width/2, centerY - height/2, width, height);
+          ctx.strokeRect(centerX - width/2, centerY - height/2, width, height);
+          break;
+        case 'circle':
+          const radius = Math.min(35, shape.radius || 25);
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          break;
+        case 'ellipse':
+          const radiusX = Math.min(35, shape.radiusX || 25);
+          const radiusY = Math.min(25, shape.radiusY || 15);
+          ctx.beginPath();
+          ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          break;
+        case 'line':
+          ctx.beginPath();
+          ctx.moveTo(20, 20);
+          ctx.lineTo(80, 80);
+          ctx.stroke();
+          break;
+        case 'polyline':
+        case 'polygon':
+          if (shape.points && shape.points.length) {
+            // Scale points to fit in the thumbnail
+            const scaledPoints = this.scalePointsToFit(shape.points, 80, 80);
+            ctx.beginPath();
+            ctx.moveTo(scaledPoints[0].x + 10, scaledPoints[0].y + 10);
+            for (let i = 1; i < scaledPoints.length; i++) {
+              ctx.lineTo(scaledPoints[i].x + 10, scaledPoints[i].y + 10);
+            }
+            if (shape.type === 'polygon') {
+              ctx.closePath();
+            }
+            ctx.fill();
+            ctx.stroke();
+          }
+          break;
+        case 'text':
+          ctx.font = '14px Arial';
+          ctx.fillStyle = '#FFFFFF';
+          ctx.textAlign = 'center';
+          ctx.fillText(shape.text || 'Text', centerX, centerY);
+          break;
+        case 'group':
+          // For groups, draw a simple icon
+          ctx.strokeRect(30, 30, 40, 40);
+          ctx.strokeRect(20, 20, 40, 40);
+          break;
+        default:
+          // Draw a generic shape icon
+          ctx.beginPath();
+          ctx.moveTo(50, 20);
+          ctx.lineTo(80, 40);
+          ctx.lineTo(80, 80);
+          ctx.lineTo(20, 80);
+          ctx.lineTo(20, 40);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+      }
+      
+      // Return the canvas as a data URL
+      return canvas.toDataURL('image/png');
+    },
+    
+    /**
+     * Scale an array of points to fit within a given width and height
+     */
+    scalePointsToFit(points, maxWidth, maxHeight) {
+      // Find the bounds of the points
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      
+      for (const point of points) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      }
+      
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      // Calculate the scale factor
+      const scaleX = width > 0 ? maxWidth / width : 1;
+      const scaleY = height > 0 ? maxHeight / height : 1;
+      const scale = Math.min(scaleX, scaleY);
+      
+      // Scale and center the points
+      return points.map(point => ({
+        x: (point.x - minX) * scale,
+        y: (point.y - minY) * scale
+      }));
     },
     
     /**
@@ -1581,13 +1808,46 @@ export default {
     
     // UI helpers
     closeMenus(event) {
-      // Don't close if clicking on a button that toggles the menu
-      if (event.target.closest('button') && 
-          (event.target.closest('button').getAttribute('@click') === 'showLibraryActions = !showLibraryActions' ||
-           event.target.closest('button').getAttribute('@click') === 'showShapeActions = !showShapeActions')) {
+      // Get references to all the elements we need to check
+      const libraryActionsBtn = document.querySelector('.library-actions-btn');
+      const shapeActionsBtn = document.querySelector('.shape-actions-btn');
+      const libraryActionsMenu = document.querySelector('.library-actions-menu');
+      const shapeActionsMenu = document.querySelector('.shape-actions-menu');
+      
+      // Log for debugging
+      console.log('Close menus called', {
+        target: event.target,
+        libraryBtnExists: !!libraryActionsBtn,
+        shapeBtnExists: !!shapeActionsBtn,
+        libraryMenuExists: !!libraryActionsMenu,
+        shapeMenuExists: !!shapeActionsMenu,
+        showLibraryActions: this.showLibraryActions,
+        showShapeActions: this.showShapeActions
+      });
+      
+      // Don't close if clicking on buttons or inside menus
+      if (libraryActionsBtn && (libraryActionsBtn === event.target || libraryActionsBtn.contains(event.target))) {
+        console.log('Clicked on library actions button');
         return;
       }
       
+      if (shapeActionsBtn && (shapeActionsBtn === event.target || shapeActionsBtn.contains(event.target))) {
+        console.log('Clicked on shape actions button');
+        return;
+      }
+      
+      if (libraryActionsMenu && (libraryActionsMenu === event.target || libraryActionsMenu.contains(event.target))) {
+        console.log('Clicked inside library actions menu');
+        return;
+      }
+      
+      if (shapeActionsMenu && (shapeActionsMenu === event.target || shapeActionsMenu.contains(event.target))) {
+        console.log('Clicked inside shape actions menu');
+        return;
+      }
+      
+      // If we got here, close all menus
+      console.log('Closing all menus');
       this.showLibraryActions = false;
       this.showShapeActions = false;
       this.showContextMenu = false;
@@ -1984,5 +2244,49 @@ img {
   right: 0;
   bottom: 0;
   left: 0;
+}
+
+/* Tooltip styles */
+.shape-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background-color: #1e293b;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  max-width: 250px;
+}
+
+.tooltip-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.tooltip-title {
+  font-weight: 600;
+  color: white;
+  margin-bottom: 4px;
+}
+
+.tooltip-part-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.part-label {
+  background-color: #3b82f6;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.part-number {
+  color: #d1d5db;
 }
 </style>

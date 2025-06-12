@@ -1,12 +1,12 @@
 <template>
-  <div class="bg-gray-900 border-b border-gray-800 shadow-lg" data-glossy-target="menuBar">
+  <div class="bg-gray-900 border-b border-gray-800 shadow-lg">
     <div class="max-w-full mx-auto px-4">
       <div class="flex items-center justify-between h-12">
         <div class="flex items-center">
           <div class="flex-shrink-0 flex items-center mr-4">
             <img src="/assets/ctrlsketch-logo.png" alt="CtrlSketch Logo" class="h-8 object-contain" />
           </div>
-          <div class="flex items-center space-x-2" data-glossy-target="menuButtons">
+          <div class="flex items-center space-x-2">
             <!-- File Menu -->
             <div class="relative group" @click.stop>
               <button
@@ -84,7 +84,7 @@
           </div>
         </div>
         <div class="flex items-center space-x-4">
-          <GlossyToggle />
+          <!-- GlossyToggle removed as requested -->
           <div class="text-white text-sm font-medium">Powered by HickSoft</div>
         </div>
       </div>
@@ -94,10 +94,7 @@
 
 <script>
 import { useCanvasStore } from '../stores/canvasStore.js';
-import GlossyToggle from './GlossyToggle.vue';
-
 export default {
-  components: { GlossyToggle },
   name: 'MenuBar',
   setup() {
     const store = useCanvasStore();

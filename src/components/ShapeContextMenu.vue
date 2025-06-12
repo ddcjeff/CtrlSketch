@@ -7,9 +7,13 @@
     <button 
       v-for="(item, index) in menuItems" 
       :key="index"
-      @click="handleAction(item.action)"
-      class="block w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-700"
-      :class="{ 'border-t border-gray-700': item.divider }"
+      @click="!item.disabled && handleAction(item.action)"
+      class="block w-full text-left px-4 py-2 text-sm hover:bg-gray-700"
+      :class="{ 
+        'border-t border-gray-700': item.divider,
+        'text-white': !item.disabled,
+        'text-gray-500 cursor-not-allowed': item.disabled
+      }"
     >
       {{ item.label }}
     </button>
@@ -35,21 +39,102 @@ export default {
   },
   computed: {
     menuItems() {
-      const items = [
-        { label: 'Cut', action: 'cut' },
-        { label: 'Copy', action: 'copy' },
-        { label: 'Paste', action: 'paste' },
-        { label: 'Delete', action: 'delete' },
-        { label: 'Duplicate', action: 'duplicate', divider: true },
-        { label: 'Bring to Front', action: 'bringToFront' },
-        { label: 'Send to Back', action: 'sendToBack', divider: true },
-        { label: 'Make Shape a Part', action: 'makeShapePart' }
-      ];
+      const hasSelectedShapes = this.selectedShapes.length > 0;
+      const hasSingleShape = this.selectedShapes.length === 1;
+      const selectedShape = hasSingleShape ? this.selectedShapes[0] : null;
+      const isPart = selectedShape && selectedShape.partProperties;
+      const isFlexLine = selectedShape && selectedShape.type === 'flexline';
       
-      // Only show certain items if shapes are selected
-      if (this.selectedShapes.length === 0) {
-        return items.filter(item => ['paste'].includes(item.action));
-      }
+      const items = [
+        { 
+          label: 'Cut', 
+          action: 'cut',
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: 'Copy', 
+          action: 'copy',
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: 'Paste', 
+          action: 'paste'
+        },
+        { 
+          label: 'Delete', 
+          action: 'delete',
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: 'Duplicate', 
+          action: 'duplicate', 
+          divider: true,
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: 'Bring to Front', 
+          action: 'bringToFront',
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: 'Send to Back', 
+          action: 'sendToBack', 
+          divider: true,
+          disabled: !hasSelectedShapes
+        },
+        { 
+          label: isPart ? 'Edit Part Properties' : 'Make Shape a Part', 
+          action: 'makeShapePart',
+          disabled: !hasSingleShape
+        },
+        {
+          label: 'Group Shapes',
+          action: 'groupShapes',
+          disabled: !hasSelectedShapes || this.selectedShapes.length < 2
+        },
+        {
+          label: 'Ungroup Shapes',
+          action: 'ungroupShapes',
+          disabled: !hasSelectedShapes || !selectedShape || selectedShape.type !== 'group'
+        },
+        {
+          label: 'Align',
+          action: 'align',
+          disabled: !hasSelectedShapes || this.selectedShapes.length < 2,
+          divider: true
+        },
+        {
+          label: 'Properties',
+          action: 'properties',
+          disabled: !hasSingleShape
+        },
+        {
+          label: 'Set Corner Radius',
+          action: 'setCornerRadius',
+          disabled: !isFlexLine,
+          divider: true
+        },
+        {
+          label: 'No Corner Rounding',
+          action: 'noCornerRounding',
+          disabled: !isFlexLine
+        },
+        {
+          label: 'Slight Corner Rounding',
+          action: 'slightCornerRounding',
+          disabled: !isFlexLine
+        },
+        {
+          label: 'Medium Corner Rounding',
+          action: 'mediumCornerRounding',
+          disabled: !isFlexLine
+        },
+        {
+          label: 'Large Corner Rounding',
+          action: 'largeCornerRounding',
+          disabled: !isFlexLine
+        }
+      ];
       
       return items;
     }

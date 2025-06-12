@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PartsPlus with Skeleton Loading</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f0f0f0;
+        }
+        
+        /* Main content styling */
+        .header {
+            display: flex;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #999;
+            padding: 5px;
+            align-items: center;
+        }
+        
+        .content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 200px;
+            background-color: #f0f0f0;
+            border-right: 1px solid #999;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .filter-bar {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-bottom: 1px solid #999;
+            display: flex;
+            align-items: center;
+        }
+        
+        .table-container {
+            flex: 1;
+            padding: 10px;
+            overflow: auto;
+            background-color: white;
+        }
+        
+        /* Skeleton loading animation */
+        @keyframes pulse {
+            0% {
+                background-color: rgba(200, 200, 200, 0.5);
+            }
+            50% {
+                background-color: rgba(200, 200, 200, 0.8);
+            }
+            100% {
+                background-color: rgba(200, 200, 200, 0.5);
+            }
+        }
+        
+        .skeleton {
+            animation: pulse 1.5s infinite;
+            border-radius: 4px;
+        }
+        
+        /* Skeleton elements */
+        .skeleton-header {
+            height: 36px;
+            margin-bottom: 10px;
+        }
+        
+        .skeleton-sidebar-item {
+            height: 30px;
+            margin-bottom: 8px;
+        }
+        
+        .skeleton-filter {
+            height: 35px;
+            width: 120px;
+            margin-right: 15px;
+        }
+        
+        .skeleton-button {
+            height: 35px;
+            width: 100px;
+            margin-left: auto;
+        }
+        
+        .skeleton-table-header {
+            height: 40px;
+            margin-bottom: 10px;
+        }
+        
+        .skeleton-table-row {
+            height: 30px;
+            margin-bottom: 6px;
+        }
+        
+        /* Real content (initially hidden) */
+        #real-content {
+            display: none;
+            height: 100%;
+        }
+        
+        /* Add styles for the real content here - similar to static-parts.html */
+        .title {
+            font-weight: bold;
+            margin-right: 20px;
+        }
+        
+        .menu-tabs {
+            display: flex;
+            flex-grow: 1;
+        }
+        
+        .tab {
+            padding: 5px 10px;
+            margin-right: 5px;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .tab.active {
+            background-color: #ddd;
+        }
+        
+        .window-controls {
+            display: flex;
+        }
+        
+        .window-controls button {
+            width: 25px;
+            height: 25px;
+            margin-left: 5px;
+            background: none;
+            border: 1px solid #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        
+        .sidebar-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .category-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .category-item {
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .category-item:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .category-item.active {
+            background-color: #1e90ff;
+            color: white;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 150px;
+            margin-right: 10px;
+        }
+        
+        .filter-group label {
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        
+        .filter-group select {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        .button-group {
+            display: flex;
+            margin-left: auto;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 8px 12px;
+            background-color: #f0f0f0;
+            border: 1px solid #999;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .btn:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .btn-primary {
+            background-color: #1e90ff;
+            color: white;
+            border-color: #0066cc;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0066cc;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        th {
+            background-color: #f4f4f4;
+            font-weight: normal;
+        }
+        
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <!-- Skeleton loading layout -->
+    <div id="skeleton-content">
+        <div class="header">
+            <div class="skeleton skeleton-header" style="width: 150px;"></div>
+            <div style="flex: 1; display: flex; gap: 5px;">
+                <div class="skeleton skeleton-header" style="width: 60px;"></div>
+                <div class="skeleton skeleton-header" style="width: 80px;"></div>
+                <div class="skeleton skeleton-header" style="width: 70px;"></div>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <div class="skeleton skeleton-header" style="width: 100px;"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+                <div class="skeleton skeleton-sidebar-item"></div>
+            </div>
+            
+            <div class="main-area">
+                <div class="filter-bar">
+                    <div class="skeleton skeleton-filter"></div>
+                    <div class="skeleton skeleton-filter"></div>
+                    <div class="skeleton skeleton-filter"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+                
+                <div class="table-container">
+                    <div class="skeleton skeleton-table-header"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                    <div class="skeleton skeleton-table-row"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Real content (initially hidden) -->
+    <div id="real-content">
+        <div class="header">
+            <div class="title">HVAC Parts Viewer</div>
+            <div class="menu-tabs">
+                <button class="tab active">Parts</button>
+                <button class="tab">Categories</button>
+                <button class="tab">Settings</button>
+                <button class="tab">Import</button>
+                <button class="tab">Help</button>
+            </div>
+            <div class="window-controls">
+                <button>-</button>
+                <button>□</button>
+                <button>×</button>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <div class="sidebar-title">Categories</div>
+                <ul class="category-list">
+                    <li class="category-item active" data-category="all">All Parts</li>
+                    <li class="category-item" data-category="VALVE">Valves</li>
+                    <li class="category-item" data-category="FLOW">Flow Sensors</li>
+                    <li class="category-item" data-category="SENSORS">Sensors</li>
+                    <li class="category-item" data-category="CONTROLLER">Controllers</li>
+                    <li class="category-item" data-category="ACTUATOR">Actuators</li>
+                    <li class="category-item" data-category="PUMP">Pumps</li>
+                    <li class="category-item" data-category="FAN">Fans</li>
+                    <li class="category-item" data-category="COIL">Coils</li>
+                    <li class="category-item" data-category="DAMPER">Dampers</li>
+                </ul>
+            </div>
+            
+            <div class="main-area">
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label for="manufacturer-filter">Manufacturer</label>
+                        <select id="manufacturer-filter">
+                            <option value="">All Manufacturers</option>
+                            <option value="Johnson Controls">Johnson Controls</option>
+                            <option value="ONICON">ONICON</option>
+                            <option value="Siemens">Siemens</option>
+                            <option value="Honeywell">Honeywell</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="subclass-filter">Sub-Category</label>
+                        <select id="subclass-filter">
+                            <option value="">All Sub-Categories</option>
+                            <option value="2-WAY CONTROL">2-Way Control</option>
+                            <option value="SINGLE TURBINE">Single Turbine</option>
+                            <option value="TEMPERATURE">Temperature</option>
+                            <option value="PRESSURE">Pressure</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="price-filter">Price Range</label>
+                        <select id="price-filter">
+                            <option value="">All Prices</option>
+                            <option value="under50">Under $50</option>
+                            <option value="50to100">$50 - $100</option>
+                            <option value="100to200">$100 - $200</option>
+                            <option value="over200">Over $200</option>
+                        </select>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
+                        <button id="reset-filters" class="btn">Reset Filters</button>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Item #</th>
+                                <th>Part Number</th>
+                                <th>Manufacturer</th>
+                                <th>Category</th>
+                                <th>Sub-Category</th>
+                                <th>List Price</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody id="parts-table-body">
+                            <!-- Parts will be added here dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Simulate loading time (for demonstration)
+        // In a real app, this would be replaced with your actual data loading
+        setTimeout(function() {
+            document.getElementById('skeleton-content').style.display = 'none';
+            document.getElementById('real-content').style.display = 'block';
+            
+            // Initialize actual data and functionality after "loading"
+            initializeApp();
+        }, 2000);
+        
+        // Sample data for demonstration
+        const partsData = [
+            {
+                ItemNumber: '98950',
+                PartNumber: 'F-1200',
+                Manufacturer: 'ONICON',
+                Supplier: 'ALPS',
+                Class: 'FLOW',
+                SubClass: 'SINGLE TURBINE',
+                ListPrice: '50',
+                Discount: '1',
+                CostPrice: '50',
+                Description: 'Turbine flow meter for chilled water systems',
+                ProductCut: 'C:\\Work\\CutSheets\\F-1200-Catalog-Sheet.pdf',
+                Rating: '4'
+            },
+            {
+                ItemNumber: '98951',
+                PartNumber: 'VG1240+843',
+                Manufacturer: 'Johnson Controls',
+                Supplier: 'National Supply',
+                Class: 'VALVE',
+                SubClass: '2-WAY CONTROL',
+                ListPrice: '120',
+                Discount: '0.1',
+                CostPrice: '108',
+                Description: '2-Way control valve 1/2"',
+                ProductCut: '',
+                Rating: '5'
+            },
+            {
+                ItemNumber: '98952',
+                PartNumber: 'TS-9100',
+                Manufacturer: 'Johnson Controls',
+                Supplier: 'HVAC Supply Inc',
+                Class: 'SENSORS',
+                SubClass: 'TEMPERATURE',
+                ListPrice: '35',
+                Discount: '0',
+                CostPrice: '35',
+                Description: 'Temperature sensor 10K NTC',
+                ProductCut: '',
+                Rating: '3'
+            },
+            {
+                ItemNumber: '98953',
+                PartNumber: 'CP-8901',
+                Manufacturer: 'Siemens',
+                Supplier: 'Controls Depot',
+                Class: 'CONTROLLER',
+                SubClass: 'VAV',
+                ListPrice: '210',
+                Discount: '0.15',
+                CostPrice: '178.5',
+                Description: 'VAV Box Controller with integrated actuator',
+                ProductCut: '',
+                Rating: '4'
+            },
+            {
+                ItemNumber: '98954',
+                PartNumber: 'P100',
+                Manufacturer: 'Honeywell',
+                Supplier: 'HVAC Supply Inc',
+                Class: 'SENSORS',
+                SubClass: 'PRESSURE',
+                ListPrice: '85',
+                Discount: '0.05',
+                CostPrice: '80.75',
+                Description: 'Differential pressure transmitter',
+                ProductCut: '',
+                Rating: '4'
+            },
+            {
+                ItemNumber: '98955',
+                PartNumber: 'M9106-AGC-2',
+                Manufacturer: 'Johnson Controls',
+                Supplier: 'National Supply',
+                Class: 'ACTUATOR',
+                SubClass: 'DAMPER',
+                ListPrice: '145',
+                Discount: '0.12',
+                CostPrice: '127.6',
+                Description: 'Electric damper actuator, 24V, 0-10V control',
+                ProductCut: '',
+                Rating: '5'
+            }
+        ];
+        
+        function initializeApp() {
+            let filteredParts = [...partsData];
+            let selectedCategory = 'all';
+            
+            displayParts(filteredParts);
+            
+            // Category selection
+            const categoryItems = document.querySelectorAll('.category-item');
+            categoryItems.forEach(item => {
+                item.addEventListener('click', function() {
+                    categoryItems.forEach(c => c.classList.remove('active'));
+                    this.classList.add('active');
+                    selectedCategory = this.dataset.category;
+                    applyFilters();
+                });
+            });
+            
+            // Apply filters button
+            document.getElementById('apply-filters').addEventListener('click', function() {
+                applyFilters();
+            });
+            
+            // Reset filters button
+            document.getElementById('reset-filters').addEventListener('click', function() {
+                document.getElementById('manufacturer-filter').value = '';
+                document.getElementById('subclass-filter').value = '';
+                document.getElementById('price-filter').value = '';
+                selectedCategory = 'all';
+                
+                // Reset category selection in sidebar
+                const categoryItems = document.querySelectorAll('.category-item');
+                categoryItems.forEach(item => {
+                    item.classList.remove('active');
+                    if (item.dataset.category === 'all') {
+                        item.classList.add('active');
+                    }
+                });
+                
+                applyFilters();
+            });
+            
+            // Apply filters to parts data
+            function applyFilters() {
+                const manufacturerFilter = document.getElementById('manufacturer-filter').value;
+                const subclassFilter = document.getElementById('subclass-filter').value;
+                const priceFilter = document.getElementById('price-filter').value;
+                
+                filteredParts = partsData.filter(part => {
+                    // Category filter
+                    if (selectedCategory !== 'all' && part.Class !== selectedCategory) {
+                        return false;
+                    }
+                    
+                    // Manufacturer filter
+                    if (manufacturerFilter && part.Manufacturer !== manufacturerFilter) {
+                        return false;
+                    }
+                    
+                    // Subclass filter
+                    if (subclassFilter && part.SubClass !== subclassFilter) {
+                        return false;
+                    }
+                    
+                    // Price filter
+                    if (priceFilter) {
+                        const price = parseFloat(part.ListPrice);
+                        
+                        if (priceFilter === 'under50' && price >= 50) {
+                            return false;
+                        } else if (priceFilter === '50to100' && (price < 50 || price > 100)) {
+                            return false;
+                        } else if (priceFilter === '100to200' && (price < 100 || price > 200)) {
+                            return false;
+                        } else if (priceFilter === 'over200' && price <= 200) {
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                displayParts(filteredParts);
+            }
+            
+            // Display parts in the table
+            function displayParts(parts) {
+                const tableBody = document.getElementById('parts-table-body');
+                tableBody.innerHTML = '';
+                
+                parts.forEach(part => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td>${part.ItemNumber}</td>
+                        <td>${part.PartNumber}</td>
+                        <td>${part.Manufacturer}</td>
+                        <td>${part.Class}</td>
+                        <td>${part.SubClass}</td>
+                        <td>$${part.ListPrice}</td>
+                        <td>${part.Description || '-'}</td>
+                    `;
+                    
+                    tableBody.appendChild(row);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -40,6 +40,15 @@
       </div>
       
       <div class="mb-3">
+        <label class="block text-gray-400 text-sm mb-1">Manufacturer</label>
+        <input 
+          type="text" 
+          v-model="localProperties.manufacturer" 
+          class="w-full bg-gray-700 text-white rounded-md border border-gray-600 px-3 py-2"
+        />
+      </div>
+      
+      <div class="mb-3">
         <label class="block text-gray-400 text-sm mb-1">Quantity</label>
         <input 
           type="number" 
@@ -135,6 +144,7 @@ export default {
         name: '',
         haystackTag: '',
         partNumber: '',
+        manufacturer: '',
         quantity: 1,
         description: '',
         pointType: '',
@@ -148,6 +158,7 @@ export default {
         name: '',
         haystackTag: '',
         partNumber: '',
+        manufacturer: '',
         quantity: 1,
         description: '',
         pointType: '',
@@ -197,6 +208,11 @@ export default {
         } catch (e) {
           console.warn('Error formatting Haystack tag:', e);
         }
+      }
+      
+      // Ensure manufacturer is included
+      if (!properties.manufacturer) {
+        properties.manufacturer = '';
       }
       
       this.localProperties = properties;

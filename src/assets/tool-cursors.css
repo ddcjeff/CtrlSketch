@@ -74,6 +74,11 @@
   cursor: crosshair;
 }
 
+/* Crosshair cursor for flex line tool */
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
 /* Resize cursors */
 .cursor-resize-nw {
   cursor: nw-resize;

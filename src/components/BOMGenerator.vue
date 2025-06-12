@@ -30,7 +30,7 @@
           </div>
         </div>
         
-        <div class="flex gap-2 mb-2">
+        <div class="flex gap-2 mb-2 flex-wrap">
           <div class="flex items-center">
             <input 
               type="checkbox" 
@@ -39,6 +39,15 @@
               class="mr-1"
             />
             <label for="includePartNumbers" class="text-gray-300 text-sm">Part Numbers</label>
+          </div>
+          <div class="flex items-center">
+            <input 
+              type="checkbox" 
+              id="includeManufacturers" 
+              v-model="includeManufacturers"
+              class="mr-1"
+            />
+            <label for="includeManufacturers" class="text-gray-300 text-sm">Manufacturers</label>
           </div>
           <div class="flex items-center">
             <input 
@@ -81,6 +90,9 @@
               <th v-if="includePartNumbers" class="py-2 px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider border-b border-gray-700">
                 Part Number
               </th>
+              <th v-if="includeManufacturers" class="py-2 px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider border-b border-gray-700">
+                Manufacturer
+              </th>
               <th v-if="includeQuantities" class="py-2 px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider border-b border-gray-700">
                 Quantity
               </th>
@@ -104,6 +116,7 @@
             <tr v-for="(item, index) in bomItems" :key="index" class="border-b border-gray-700 hover:bg-gray-800">
               <td class="py-2 px-3 text-sm">{{ item.name }}</td>
               <td v-if="includePartNumbers" class="py-2 px-3 text-sm">{{ item.partNumber }}</td>
+              <td v-if="includeManufacturers" class="py-2 px-3 text-sm">{{ item.manufacturer }}</td>
               <td v-if="includeQuantities" class="py-2 px-3 text-sm">{{ item.quantity }}</td>
               <td v-if="includeHaystackTags" class="py-2 px-3 text-sm">{{ item.haystackTag }}</td>
               <td v-if="includePointTypes" class="py-2 px-3 text-sm">{{ item.pointType }}</td>
@@ -152,6 +165,7 @@ export default {
       // BOM settings
       selectedPageId: this.currentPageId || 'all',
       includePartNumbers: true,
+      includeManufacturers: true,
       includeQuantities: true,
       includeHaystackTags: true,
       includePointTypes: true
@@ -168,15 +182,23 @@ export default {
       if (this.selectedPageId === 'all') {
         // Get shapes from all pages
         shapesWithParts = this.shapes.filter(shape => shape.partProperties);
+        console.log('All shapes with parts:', shapesWithParts);
       } else {
         // Get shapes from the selected page
         const pageShapes = this.shapes.filter(shape => {
           // Check if the shape is on the selected page
-          // This depends on your data structure - adjust as needed
-          return shape.pageId === this.selectedPageId && shape.partProperties;
+          const isOnPage = shape.pageId === this.selectedPageId;
+          const hasParts = !!shape.partProperties;
+          
+          if (hasParts) {
+            console.log('Shape with parts:', shape.id, 'pageId:', shape.pageId, 'selectedPageId:', this.selectedPageId);
+          }
+          
+          return isOnPage && hasParts;
         });
         
         shapesWithParts = pageShapes;
+        console.log('Shapes with parts on page', this.selectedPageId, ':', shapesWithParts);
       }
       
       // Group by part number and aggregate quantities
@@ -195,6 +217,7 @@ export default {
           partMap.set(partKey, {
             name: partProps.name || 'Unnamed Part',
             partNumber: partProps.partNumber || '',
+            manufacturer: partProps.manufacturer || '',
             quantity: partProps.quantity || 1,
             haystackTag: partProps.haystackTag || '',
             pointType: partProps.pointType || '',
@@ -205,7 +228,9 @@ export default {
       });
       
       // Convert map to array
-      return Array.from(partMap.values());
+      const result = Array.from(partMap.values());
+      console.log('Final BOM items:', result);
+      return result;
     }
   },
   methods: {
@@ -215,6 +240,7 @@ export default {
     getColumnCount() {
       let count = 2; // Name and Description are always included
       if (this.includePartNumbers) count++;
+      if (this.includeManufacturers) count++;
       if (this.includeQuantities) count++;
       if (this.includeHaystackTags) count++;
       if (this.includePointTypes) count++;
@@ -235,6 +261,7 @@ export default {
       // Create CSV header
       let headers = ['Part Name'];
       if (this.includePartNumbers) headers.push('Part Number');
+      if (this.includeManufacturers) headers.push('Manufacturer');
       if (this.includeQuantities) headers.push('Quantity');
       if (this.includeHaystackTags) headers.push('Haystack Tag');
       if (this.includePointTypes) headers.push('Point Type');
@@ -246,6 +273,7 @@ export default {
       this.bomItems.forEach(item => {
         let row = [item.name];
         if (this.includePartNumbers) row.push(item.partNumber);
+        if (this.includeManufacturers) row.push(item.manufacturer);
         if (this.includeQuantities) row.push(item.quantity);
         if (this.includeHaystackTags) row.push(item.haystackTag);
         if (this.includePointTypes) row.push(item.pointType);

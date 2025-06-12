@@ -49,9 +49,6 @@
       <div class="status-item" :class="{ 'status-active': snapToGrid }">
         <strong>Snap to Grid:</strong> {{ snapToGrid ? 'ON' : 'OFF' }}
       </div>
-      <div class="status-item" :class="{ 'status-active': snapToObjects }">
-        <strong>Snap to Objects:</strong> {{ snapToObjects ? 'ON' : 'OFF' }}
-      </div>
       
       <!-- Auto-save status -->
       <div v-if="autoSaveStatus" class="status-item auto-save-status" :class="{
@@ -88,7 +85,6 @@
 import Rulers from './Rulers.vue'
 import ShapeContextMenu from './ShapeContextMenu.vue'
 import * as XLSX from 'xlsx'
-import { drawConnectionPoint } from './drawConnectionPoint.js'
 
 export default {
   name: "CanvasZoomGrid",
@@ -108,10 +104,6 @@ export default {
     },
     showRulers: Boolean,
     snapToGrid: Boolean,
-    snapToObjects: {
-      type: Boolean,
-      default: false
-    },
     shapes: {
       type: Array,
       default: () => []
@@ -157,8 +149,6 @@ export default {
       startX: 0,
       startY: 0,
       currentShape: null,
-      // Non-reactive property for flexline tool
-      _flexlineData: null,
       resizeHandle: null,
       selectionStart: null,
       lastGridSize: 0,
@@ -210,10 +200,7 @@ export default {
         size: { width: 400, height: 400 },
         isDragging: false,
         dragStart: { x: 0, y: 0 }
-      },
-      
-      // Flag to prevent recursive updates
-      _batchUpdating: false
+      }
     };
   },
   watch: {
@@ -259,14 +246,6 @@ export default {
         console.log('Tool changed from', oldVal, 'to', newVal);
         // If the tool is not 'select' or 'hand', we'll need to emit an event when the drawing is complete
         this.isDrawingTool = !['select', 'hand', ''].includes(newVal);
-        
-        // Set cursor for connection point tool
-        if (newVal === 'connection-point') {
-          const canvas = this.$refs.canvas;
-          if (canvas) {
-            canvas.classList.add('cursor-crosshair');
-          }
-        }
       }
     },
     shapes: {
@@ -275,15 +254,8 @@ export default {
         // Skip processing if shapes are the same reference (prevents some recursive updates)
         if (newVal === oldVal) return;
         
-        // Skip if we're in the middle of a batch update
-        if (this._batchUpdating) {
-          console.log('Skipping shapes watcher during batch update');
-          return;
-        }
-        
         // Create a queue of images to load to prevent recursive updates
         const imagesToLoad = [];
-        let needsRender = false;
         
         // Process images that need loading
         if (Array.isArray(newVal)) {
@@ -294,13 +266,6 @@ export default {
                 imagesToLoad.push({...shape}); // Clone to avoid modifying the original
               }
             }
-            
-            // For all shapes, ensure _layerOpacity is not set
-            // This will force the renderer to use the layer's opacity
-            if (shape && shape._layerOpacity !== undefined) {
-              delete shape._layerOpacity;
-              needsRender = true;
-            }
           });
         }
         
@@ -310,14 +275,18 @@ export default {
             if (!shape) return;
             
             const oldShape = oldVal.find(s => s && s.id === shape.id);
-            if (!oldShape) return; // Skip new shapes
+            
+            // For all shapes, ensure _layerOpacity is not set
+            // This will force the renderer to use the layer's opacity
+            if (shape._layerOpacity !== undefined) {
+              delete shape._layerOpacity;
+            }
             
             // Special handling for images
             if (shape.type === 'image' && oldShape) {
               // Always preserve the image object when the shape exists in both old and new arrays
-              if (oldShape.image && !shape.image) {
+              if (oldShape.image) {
                 shape.image = oldShape.image;
-                needsRender = true;
               }
               
               // If layer changed and no image, queue it for loading
@@ -332,41 +301,30 @@ export default {
         }
         
         // Schedule a render with requestAnimationFrame to avoid synchronous updates
-        if (needsRender || imagesToLoad.length > 0) {
-          requestAnimationFrame(() => {
-            this.render();
-            
-            // Then load images after a longer delay to prevent recursive updates
-            if (imagesToLoad.length > 0) {
-              console.log(`Scheduling loading of ${imagesToLoad.length} images`);
-              
-              // Set a flag to prevent recursive updates
-              this._batchUpdating = true;
-              
-              setTimeout(() => {
-                // Process images in batches to prevent overwhelming the system
-                const processBatch = (batch, index) => {
-                  if (index >= batch.length) {
-                    // Clear the batch updating flag when done
-                    this._batchUpdating = false;
-                    return;
-                  }
-                  
-                  // Process current image
-                  this.reloadImage(batch[index]);
-                  
-                  // Schedule next image with a delay
-                  setTimeout(() => {
-                    processBatch(batch, index + 1);
-                  }, 50);
-                };
+        requestAnimationFrame(() => {
+          this.render();
+          
+          // Then load images after a longer delay to prevent recursive updates
+          if (imagesToLoad.length > 0) {
+            setTimeout(() => {
+              // Process images in batches to prevent overwhelming the system
+              const processBatch = (batch, index) => {
+                if (index >= batch.length) return;
                 
-                // Start processing the first image
-                processBatch(imagesToLoad, 0);
-              }, 200);
-            }
-          });
-        }
+                // Process current image
+                this.reloadImage(batch[index]);
+                
+                // Schedule next image with a delay
+                setTimeout(() => {
+                  processBatch(batch, index + 1);
+                }, 50);
+              };
+              
+              // Start processing the first image
+              processBatch(imagesToLoad, 0);
+            }, 200);
+          }
+        });
       }
     },
     visibleLayers: {
@@ -545,10 +503,9 @@ export default {
           return 'cursor-shape';
         case 'polygon':
           return 'cursor-polygon';
-        case 'flexline':
-          return 'cursor-crosshair';
         default:
-          console.log('Unknown tool:', this.tool, 'defaulting to select cursor');
+          // Remove excessive logging
+          // console.log('Unknown tool:', this.tool, 'defaulting to select cursor');
           return 'cursor-select'; // Default to select cursor for unknown tools
       }
     },
@@ -567,14 +524,6 @@ export default {
       
       // Prevent reloading images that are already loading
       if (shape._isLoading) {
-        console.log('Skipping reload for already loading image:', shape.id);
-        return;
-      }
-      
-      // Check if this shape exists in our shapes array
-      const existingShapeIndex = this.shapes.findIndex(s => s && s.id === shape.id);
-      if (existingShapeIndex === -1) {
-        console.warn('Attempted to reload image for shape that does not exist in shapes array:', shape.id);
         return;
       }
       
@@ -887,252 +836,10 @@ export default {
       ctx.closePath();
       ctx.fill();
     },
-    // Function to find snap points on objects
-    findObjectSnapPoints(x, y, threshold = 10) {
-      // Don't snap if we're not in a drawing mode or snap to objects is disabled
-      if (!this.isDrawingTool || !this.snapToObjects) {
-        return null;
-      }
-      
-      // Get visible shapes that we can snap to
-      const snapTargets = this.shapes.filter(shape => {
-        // Only consider shapes on visible, non-frozen layers
-        const layer = this.visibleLayers.find(l => l.id === shape.layerId);
-        return layer && layer.visible && !layer.frozen;
-      });
-      
-      // Points to check for snapping
-      const snapPoints = [];
-      
-      // First check for connection points - we'll prioritize these
-      const connectionPoints = [];
-      snapTargets.forEach(shape => {
-        if (shape.type === 'connection-point') {
-          // Connection points get a special priority flag
-          connectionPoints.push({ 
-            x: shape.x, 
-            y: shape.y,
-            isConnectionPoint: true  // Flag to prioritize these points
-          });
-        }
-      });
-      
-      // Collect snap points from all shapes
-      snapTargets.forEach(shape => {
-        // Add shape-specific snap points
-        switch (shape.type) {
-          case 'rectangle':
-            // Corners
-            snapPoints.push({ x: shape.x, y: shape.y });
-            snapPoints.push({ x: shape.x + shape.width, y: shape.y });
-            snapPoints.push({ x: shape.x, y: shape.y + shape.height });
-            snapPoints.push({ x: shape.x + shape.width, y: shape.y + shape.height });
-            // Midpoints
-            snapPoints.push({ x: shape.x + shape.width/2, y: shape.y });
-            snapPoints.push({ x: shape.x, y: shape.y + shape.height/2 });
-            snapPoints.push({ x: shape.x + shape.width, y: shape.y + shape.height/2 });
-            snapPoints.push({ x: shape.x + shape.width/2, y: shape.y + shape.height });
-            // Center
-            snapPoints.push({ x: shape.x + shape.width/2, y: shape.y + shape.height/2 });
-            break;
-            
-          case 'ellipse':
-            // Cardinal points
-            snapPoints.push({ x: shape.x, y: shape.y - shape.height/2 }); // Top
-            snapPoints.push({ x: shape.x + shape.width/2, y: shape.y }); // Right
-            snapPoints.push({ x: shape.x, y: shape.y + shape.height/2 }); // Bottom
-            snapPoints.push({ x: shape.x - shape.width/2, y: shape.y }); // Left
-            // Center
-            snapPoints.push({ x: shape.x, y: shape.y });
-            break;
-            
-          case 'line':
-            // Endpoints with special flag for enhanced snapping
-            snapPoints.push({ 
-              x: shape.x1, 
-              y: shape.y1,
-              isLineEndpoint: true  // Flag to prioritize line endpoints
-            });
-            snapPoints.push({ 
-              x: shape.x2, 
-              y: shape.y2,
-              isLineEndpoint: true  // Flag to prioritize line endpoints
-            });
-            // Midpoint
-            snapPoints.push({ 
-              x: (shape.x1 + shape.x2) / 2, 
-              y: (shape.y1 + shape.y2) / 2 
-            });
-            break;
-            
-          case 'polyline':
-          case 'polygon':
-            // All vertices
-            if (shape.points && Array.isArray(shape.points)) {
-              // Get the first and last points for polylines (they're endpoints)
-              const isPolyline = shape.type === 'polyline';
-              
-              shape.points.forEach((point, index) => {
-                // For polylines, mark first and last points as endpoints
-                const isEndpoint = isPolyline && (index === 0 || index === shape.points.length - 1);
-                
-                snapPoints.push({ 
-                  x: point.x, 
-                  y: point.y,
-                  isLineEndpoint: isEndpoint // Flag endpoints for polylines
-                });
-              });
-            }
-            break;
-            
-          case 'path':
-            // Path endpoints and control points
-            if (shape.segments && Array.isArray(shape.segments)) {
-              // For paths, the first and last segments contain endpoints
-              const firstIndex = 0;
-              const lastIndex = shape.segments.length - 1;
-              
-              shape.segments.forEach((segment, index) => {
-                if (segment.point) {
-                  // Mark first and last points as endpoints
-                  const isEndpoint = (index === firstIndex || index === lastIndex);
-                  
-                  snapPoints.push({ 
-                    x: segment.point.x, 
-                    y: segment.point.y,
-                    isLineEndpoint: isEndpoint // Flag endpoints for paths
-                  });
-                }
-              });
-            }
-            break;
-            
-          case 'connection-point':
-            // Connection points are specifically designed for snapping
-            // Add a special flag to prioritize connection points
-            snapPoints.push({ 
-              x: shape.x, 
-              y: shape.y,
-              isConnectionPoint: true  // Flag to prioritize these points
-            });
-            break;
-        }
-      });
-      
-      // Find the closest snap point within threshold
-      let closestPoint = null;
-      let minDistance = threshold;
-      
-      // Set thresholds for different types of snap points
-      const connectionPointThreshold = threshold * 2; // Double the threshold for connection points
-      const lineEndpointThreshold = threshold * 1.5; // 1.5x threshold for line endpoints
-      
-      // First pass: check only connection points with larger threshold
-      snapPoints.forEach(point => {
-        if (point.isConnectionPoint) {
-          const dx = point.x - x;
-          const dy = point.y - y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance < connectionPointThreshold && (closestPoint === null || 
-              !closestPoint.isConnectionPoint || distance < minDistance)) {
-            minDistance = distance;
-            closestPoint = point;
-          }
-        }
-      });
-      
-      // Second pass: if no connection point found, check line endpoints
-      // Note: We don't use !closestPoint here to allow line endpoints to compete with connection points
-      // if they're closer (but still give connection points a larger threshold)
-      snapPoints.forEach(point => {
-        if (point.isLineEndpoint) {
-          const dx = point.x - x;
-          const dy = point.y - y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance < lineEndpointThreshold && 
-              (closestPoint === null || 
-               (closestPoint.isConnectionPoint && distance < minDistance * 0.7) || // Allow closer line endpoints to override connection points
-               (!closestPoint.isConnectionPoint && distance < minDistance))) {
-            minDistance = distance;
-            closestPoint = point;
-          }
-        }
-      });
-      
-      // Third pass: if no connection point or line endpoint found, check regular snap points
-      if (!closestPoint) {
-        snapPoints.forEach(point => {
-          if (!point.isConnectionPoint && !point.isLineEndpoint) {
-            const dx = point.x - x;
-            const dy = point.y - y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance < threshold) {
-              if (closestPoint === null || distance < minDistance) {
-                minDistance = distance;
-                closestPoint = point;
-              }
-            }
-          }
-        });
-      }
-      
-      // If we found a close enough point, snap to it
-      if (closestPoint) {
-        // Log the type of snap point for debugging
-        const snapType = closestPoint.isConnectionPoint ? 'connection point' : 
-                         closestPoint.isLineEndpoint ? 'line endpoint' : 'regular snap point';
-        console.log(`Snapping to ${snapType} at (${closestPoint.x}, ${closestPoint.y})`);
-        
-        // Draw a visual indicator for the snap point
-        if (this.ctx) {
-          this.ctx.save();
-          
-          // Use different colors for different types of snap points
-          if (closestPoint.isConnectionPoint) {
-            // Orange for connection points
-            this.ctx.fillStyle = '#FF5722';
-          } else if (closestPoint.isLineEndpoint) {
-            // Blue for line endpoints
-            this.ctx.fillStyle = '#2196F3';
-          } else {
-            // Green for other snap points
-            this.ctx.fillStyle = '#4CAF50';
-          }
-          
-          this.ctx.beginPath();
-          this.ctx.arc(closestPoint.x, closestPoint.y, 5, 0, Math.PI * 2);
-          this.ctx.fill();
-          this.ctx.restore();
-          
-          // Schedule removal of the indicator
-          setTimeout(() => this.render(), 300);
-        }
-        
-        return closestPoint;
-      }
-      
-      return null;
-    },
-    
-    snapCoordinate(coord, y, isLineEnd = false) {
-      // Original point for reference
-      const originalPoint = y !== undefined ? { x: coord, y } : coord;
-      
-      // If it's a line end and snap to objects is enabled, try to snap to objects first
-      if (isLineEnd && y !== undefined && this.snapToObjects) {
-        // Use a much larger threshold (40px) for very aggressive snapping
-        const objectSnap = this.findObjectSnapPoints(coord, y, 40);
-        if (objectSnap) {
-          return objectSnap;
-        }
-      }
-      
+    snapCoordinate(coord, y) {
       // If snap to grid is disabled or grid size is 0, return the original coordinates
       if (!this.snapToGrid || !this.gridSize) {
-        return originalPoint;
+        return y !== undefined ? { x: coord, y } : coord;
       }
       
       const step = this.gridSize;
@@ -1270,9 +977,7 @@ export default {
       const y = (e.clientY - rect.top - centerY) / this.zoom;
       // Set the initial mouse position
       // We'll update these when we start dragging a shape
-      // Use line end snapping for drawing tools that create lines
-      const isLineEnd = this.tool === 'line' || this.tool === 'flexline' || this.tool === 'pen';
-      const snappedPoint = this.snapCoordinate(x, y, isLineEnd);
+      const snappedPoint = this.snapCoordinate(x, y);
       this.startX = snappedPoint.x;
       this.startY = snappedPoint.y;
       console.log('Initial mouse position set to:', this.startX, this.startY);
@@ -1282,103 +987,7 @@ export default {
       if (this.tool && this.tool !== 'select' && this.tool !== 'hand') {
         this.isDrawing = true;
         
-        // Special handling for connection point tool
-        if (this.tool === 'connection-point') {
-          // First check if we clicked on an existing shape
-          const shape = this.getShapeAt(x, y);
-          
-          if (shape) {
-            // Create a connection point attached to this shape
-            const connectionPoint = {
-              id: `connection-point-${Date.now()}`,
-              type: 'connection-point',
-              x: snappedX,
-              y: snappedY,
-              width: 10,  // Small size for hit testing
-              height: 10,
-              parentId: shape.id,  // Store the parent shape ID
-              visible: true,       // For editing
-              printable: false,    // Not visible when printing
-              color: '#FF6600',    // Orange color for visibility
-              layerId: this.activeLayer ? this.activeLayer.id : undefined
-            };
-            
-            // Add the connection point to the shapes array
-            const updatedShapes = [...this.shapes, connectionPoint];
-            this.$emit('shape-added', updatedShapes);
-            
-            // Show notification
-            this.$emit('show-notification', {
-              type: 'success',
-              message: 'Connection point added to shape'
-            });
-            
-            // Switch back to select mode
-            this.forceSelectMode();
-          } else {
-            // Create a standalone connection point
-            const connectionPoint = {
-              id: `connection-point-${Date.now()}`,
-              type: 'connection-point',
-              x: snappedX,
-              y: snappedY,
-              width: 10,  // Small size for hit testing
-              height: 10,
-              visible: true,       // For editing
-              printable: false,    // Not visible when printing
-              color: '#FF6600',    // Orange color for visibility
-              layerId: this.activeLayer ? this.activeLayer.id : undefined
-            };
-            
-            // Add the connection point to the shapes array
-            const updatedShapes = [...this.shapes, connectionPoint];
-            this.$emit('shape-added', updatedShapes);
-            
-            // Show notification
-            this.$emit('show-notification', {
-              type: 'success',
-              message: 'Connection point added'
-            });
-            
-            // Switch back to select mode
-            this.forceSelectMode();
-          }
-          
-          return;
-        }
-        
-        // Special handling for flexline tool
-        if (this.tool === 'flexline') {
-          // Store flexline data in a non-reactive property
-          this._flexlineData = {
-            id: Date.now(),
-            type: 'flexline',
-            x: snappedX,
-            y: snappedY,
-            width: 0,
-            height: 0,
-            points: [[snappedX, snappedY]],
-            flexLineSegment: 0,
-            cornerRadii: [],
-            cornerRadius: 0,
-            minX: snappedX,
-            minY: snappedY,
-            maxX: snappedX,
-            maxY: snappedY,
-            rotation: 0,
-            lineStyle: 'solid',
-            fill: '#3B82F6', // Default blue
-            stroke: '#000000', // Default black
-            layerId: this.activeLayer ? this.activeLayer.id : undefined
-          };
-          
-          // Create a minimal reactive shape for Vue
-          this.currentShape = {
-            type: 'flexline',
-            id: this._flexlineData.id
-          };
-        } else {
-          // Normal handling for other tools
+        // Normal handling for all tools
           this.currentShape = {
             id: Date.now(),
             type: this.tool,
@@ -1462,20 +1071,6 @@ export default {
         });
       }
       if (shape) {
-        // Skip shapes from different pages
-        const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-        if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-          console.log('Cannot select shape from different page:', shape.id);
-          return;
-        }
-        
-        // Skip shapes from foreground pages (they should not be selectable)
-        if (shape.pageId && this.visibleLayers.some(layer => 
-            layer.pageId === shape.pageId && layer.type === 'foreground')) {
-          console.log('Cannot select shape from foreground page:', shape.id);
-          return;
-        }
-        
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -1498,7 +1093,7 @@ export default {
           if (this.localSelectedShapes.some(s => s.id === shape.id)) {
           console.log('Enabling drag mode:', shape.id);
            this.isDragging = true;
-          const snappedPoint = this.snapCoordinate(x, y, false);
+          const snappedPoint = this.snapCoordinate(x, y);
            this.startX = snappedPoint.x;
            this.startY = snappedPoint.y;
           console.log('Setting drag start point:', this.startX, this.startY);
@@ -1585,9 +1180,7 @@ export default {
       const y = (e.clientY - rect.top - centerY) / this.zoom;
       this.cursorX = x;
       this.cursorY = y;
-      // Use line end snapping for drawing tools that create lines
-      const isLineEnd = this.isDrawing && (this.tool === 'line' || this.tool === 'flexline' || this.tool === 'pen');
-      const snappedPoint = this.snapCoordinate(x, y, isLineEnd);
+      const snappedPoint = this.snapCoordinate(x, y);
       const snappedX = snappedPoint.x;
       const snappedY = snappedPoint.y;
       if (this.isDrawing && this.currentShape) {
@@ -1600,52 +1193,7 @@ export default {
           if (distance > 2) {
             this.currentShape.points.push([snappedX, snappedY]);
           }
-        } else if (this.tool === 'flexline' && this._flexlineData) {
-          // For flex line, we create orthogonal segments using the non-reactive property
-          if (this._flexlineData.points.length === 1) {
-            // First segment - just add the current point
-            this._flexlineData.points.push([snappedX, snappedY]);
-            
-            // Update bounds
-            this._flexlineData.minX = Math.min(this._flexlineData.minX, snappedX);
-            this._flexlineData.maxX = Math.max(this._flexlineData.maxX, snappedX);
-            this._flexlineData.minY = Math.min(this._flexlineData.minY, snappedY);
-            this._flexlineData.maxY = Math.max(this._flexlineData.maxY, snappedY);
-          } else {
-            // Update the last point to create orthogonal segments
-            const points = this._flexlineData.points;
-            const lastIndex = points.length - 1;
-            const prevIndex = lastIndex - 1;
-            
-            // If we have at least 2 points
-            if (prevIndex >= 0) {
-              // Determine if we're in horizontal or vertical segment mode
-              // We alternate between horizontal and vertical segments
-              const isHorizontalSegment = this._flexlineData.flexLineSegment % 2 === 0;
-              
-              if (isHorizontalSegment) {
-                // Horizontal segment - only X changes
-                points[lastIndex] = [snappedX, points[prevIndex][1]];
-                
-                // Update bounds
-                this._flexlineData.minX = Math.min(this._flexlineData.minX, snappedX);
-                this._flexlineData.maxX = Math.max(this._flexlineData.maxX, snappedX);
-              } else {
-                // Vertical segment - only Y changes
-                points[lastIndex] = [points[prevIndex][0], snappedY];
-                
-                // Update bounds
-                this._flexlineData.minY = Math.min(this._flexlineData.minY, snappedY);
-                this._flexlineData.maxY = Math.max(this._flexlineData.maxY, snappedY);
-              }
-              
-              // Update width and height based on bounds
-              this._flexlineData.width = this._flexlineData.maxX - this._flexlineData.minX;
-              this._flexlineData.height = this._flexlineData.maxY - this._flexlineData.minY;
-              this._flexlineData.x = this._flexlineData.minX;
-              this._flexlineData.y = this._flexlineData.minY;
-            }
-          }
+        
         } else {
           this.currentShape.width = snappedX - this.currentShape.x;
           this.currentShape.height = snappedY - this.currentShape.y;
@@ -1672,16 +1220,7 @@ export default {
         });
         
         if (dx !== 0 || dy !== 0) {
-          // Get the active page ID
-          const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-          
           this.localSelectedShapes.forEach(shape => {
-            // Skip shapes from different pages
-            if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-              console.log('Cannot move shape from different page:', shape.id);
-              return;
-            }
-            
             const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
             // Check if the shape is movable and the layer is not frozen
             if (shape.movable !== false && (!shapeLayer || !shapeLayer.frozen)) {
@@ -1694,14 +1233,8 @@ export default {
           });
           this.startX = snappedX;
           this.startY = snappedY;
-          
           // Create a deep copy of the shapes with updated positions
           const updatedShapes = this.shapes.map(s => {
-            // Skip shapes from different pages
-            if (activePageId && s.pageId && s.pageId !== activePageId) {
-              return s; // Return the original shape unchanged
-            }
-            
             const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
             if (movedShape) {
               // Create a new object with updated properties
@@ -1741,21 +1274,7 @@ export default {
           });
           
           console.log('Emitting shape-updated event during drag with', updatedShapes.length, 'shapes');
-          
-          // Mark these shapes as drag updates to optimize processing
-          const dragShapes = updatedShapes.map(shape => ({
-            ...shape,
-            _isDragOperation: true // Add a flag to indicate this is a drag operation
-          }));
-          
-          // Use a debounced emit for drag operations to reduce update frequency
-          if (!this._debouncedEmitUpdate) {
-            this._debouncedEmitUpdate = this.debounce((shapes) => {
-              this.$emit('shape-updated', shapes);
-            }, 16); // ~60fps
-          }
-          
-          this._debouncedEmitUpdate(dragShapes);
+          this.$emit('shape-updated', updatedShapes);
         }
       } else if (this.isResizing && this.localSelectedShapes.length > 0 && this.resizeHandle && !this.activeLayer.frozen) {
         const shape = this.localSelectedShapes[0];
@@ -1854,50 +1373,9 @@ export default {
       }
       
       if (this.isDrawing && this.currentShape) {
-        // Special handling for flex line tool
-        if (this.currentShape.type === 'flexline' && this._flexlineData) {
-          // Get canvas-relative coordinates
-          const rect = this.$refs.canvas.getBoundingClientRect();
-          const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
-          const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
-          const x = (e.clientX - rect.left - centerX) / this.zoom;
-          const y = (e.clientY - rect.top - centerY) / this.zoom;
-          const snappedPoint = this.snapCoordinate(x, y);
-          
-          // If we have at least 2 points and clicked to add a new segment
-          if (this._flexlineData.points.length >= 2) {
-            // Increment the segment counter to switch between horizontal and vertical
-            this._flexlineData.flexLineSegment++;
-            
-            // Add a new point at the current position
-            // The next mousemove will adjust it to maintain orthogonal routing
-            this._flexlineData.points.push([snappedPoint.x, snappedPoint.y]);
-            
-            // Update bounds
-            this._flexlineData.minX = Math.min(this._flexlineData.minX, snappedPoint.x);
-            this._flexlineData.maxX = Math.max(this._flexlineData.maxX, snappedPoint.x);
-            this._flexlineData.minY = Math.min(this._flexlineData.minY, snappedPoint.y);
-            this._flexlineData.maxY = Math.max(this._flexlineData.maxY, snappedPoint.y);
-            
-            // Update width and height based on bounds
-            this._flexlineData.width = this._flexlineData.maxX - this._flexlineData.minX;
-            this._flexlineData.height = this._flexlineData.maxY - this._flexlineData.minY;
-            this._flexlineData.x = this._flexlineData.minX;
-            this._flexlineData.y = this._flexlineData.minY;
-            
-            // Add a corner radius entry for the previous corner
-            if (this._flexlineData.points.length > 2) {
-              this._flexlineData.cornerRadii.push(this._flexlineData.cornerRadius || 0);
-            }
-            
-            // Don't complete the shape yet, just return to continue drawing
-            return;
-          }
-        }
         
         if (Math.abs(this.currentShape.width) > 5 || Math.abs(this.currentShape.height) > 5 || 
-            this.currentShape.type === 'text' || this.currentShape.type === 'pen' || 
-            this.currentShape.type === 'flexline') {
+            this.currentShape.type === 'text' || this.currentShape.type === 'pen') {
           if (this.currentShape.width < 0) {
             this.currentShape.x += this.currentShape.width;
             this.currentShape.width = Math.abs(this.currentShape.width);
@@ -2048,26 +1526,9 @@ export default {
       const x = (e.clientX - rect.left - centerX) / this.zoom;
       const y = (e.clientY - rect.top - centerY) / this.zoom;
       console.log('Click at:', x, y);
-      console.log('Active layer:', this.activeLayer);
-      console.log('Active page ID:', this.activeLayer?.pageId);
-      
-      // Use line end snapping for flexline tool when adding points
-      const isLineEnd = this.tool === 'flexline';
-      const snappedPoint = this.snapCoordinate(x, y, isLineEnd);
-      const snappedX = snappedPoint.x;
-      const snappedY = snappedPoint.y;
-      
       const shape = this.getShapeAt(x, y);
-      console.log('Shape found on click:', shape ? shape.type : 'none', 
-        shape ? `(id: ${shape.id}, pageId: ${shape.pageId}, isBackgroundShape: ${shape.isBackgroundShape})` : '');
+      console.log('Shape found on click:', shape ? shape.type : 'none');
       if (shape) {
-        // Skip shapes from different pages
-        const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-        if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-          console.log('Cannot select shape from different page:', shape.id);
-          return;
-        }
-        
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           console.log('Shape layer:', shape.layerId, 'Frozen:', shapeLayer?.frozen);
@@ -2090,74 +1551,6 @@ export default {
       }
     },
     handleDoubleClick(e) {
-      // If we're drawing a flex line, complete it on double-click
-      if (this.isDrawing && this.currentShape && this.currentShape.type === 'flexline' && this._flexlineData) {
-        console.log('Completing flex line on double-click');
-        
-        // Only complete if we have at least 2 points
-        if (this._flexlineData.points && this._flexlineData.points.length >= 2) {
-          // Update bounds and dimensions one last time
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          
-          // Calculate bounds from all points
-          for (const point of this._flexlineData.points) {
-            minX = Math.min(minX, point[0]);
-            maxX = Math.max(maxX, point[0]);
-            minY = Math.min(minY, point[1]);
-            maxY = Math.max(maxY, point[1]);
-          }
-          
-          // Update shape properties
-          this._flexlineData.x = minX;
-          this._flexlineData.y = minY;
-          this._flexlineData.width = maxX - minX;
-          this._flexlineData.height = maxY - minY;
-          
-          // Ensure fill and stroke are valid
-          if (!this._flexlineData.fill || this._flexlineData.fill === '') {
-            this._flexlineData.fill = '#3B82F6'; // Default blue
-          }
-          
-          if (!this._flexlineData.stroke || this._flexlineData.stroke === '') {
-            this._flexlineData.stroke = '#000000'; // Default black
-          }
-          
-          // Create a clean copy without the temporary properties
-          const newShape = { 
-            id: this._flexlineData.id,
-            type: 'flexline',
-            x: this._flexlineData.x,
-            y: this._flexlineData.y,
-            width: this._flexlineData.width,
-            height: this._flexlineData.height,
-            points: [...this._flexlineData.points],
-            cornerRadii: [...this._flexlineData.cornerRadii],
-            cornerRadius: this._flexlineData.cornerRadius,
-            rotation: this._flexlineData.rotation,
-            lineStyle: this._flexlineData.lineStyle,
-            fill: this._flexlineData.fill,
-            stroke: this._flexlineData.stroke,
-            layerId: this._flexlineData.layerId
-          };
-          
-          const updatedShapes = [...this.shapes, newShape];
-          this.$emit('shape-added', updatedShapes);
-          
-          // Switch back to select mode
-          console.log('Flex line complete, switching back to select mode');
-          this.forceSelectMode();
-          
-          // Reset drawing state
-          this.currentShape = null;
-          this._flexlineData = null;
-          this.isDrawing = false;
-          
-          // Prevent further processing
-          e.stopPropagation();
-          e.preventDefault();
-          return;
-        }
-      }
       
       // Check if we're double-clicking on the debug overlay
       if (this.showDebugOverlay) {
@@ -2180,22 +1573,8 @@ export default {
       const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
       const x = (e.clientX - rect.left - centerX) / this.zoom;
       const y = (e.clientY - rect.top - centerY) / this.zoom;
-      console.log('Double-click at:', x, y);
-      console.log('Active layer:', this.activeLayer);
-      console.log('Active page ID:', this.activeLayer?.pageId);
       const shape = this.getShapeAt(x, y);
-      console.log('Shape found on double-click:', shape ? shape.type : 'none', 
-        shape ? `(id: ${shape.id}, pageId: ${shape.pageId}, isBackgroundShape: ${shape.isBackgroundShape})` : '');
-      if (!shape) return;
-      
-      // Skip shapes from different pages
-      const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-      if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-        console.log('Cannot interact with shape from different page:', shape.id);
-        return;
-      }
-      
-      if (shape.type === 'text') {
+      if (shape && shape.type === 'text') {
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           const newText = prompt('Enter text:', shape.text);
@@ -2207,7 +1586,7 @@ export default {
             this.$emit('shape-updated', updatedShapes);
           }
         }
-      } else if (shape.type === 'excel-table') {
+      } else if (shape && shape.type === 'excel-table') {
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           // Create a file input element to trigger file selection
@@ -2336,7 +1715,6 @@ export default {
         if (this.isDrawing) {
           this.isDrawing = false;
           this.currentShape = null;
-          this._flexlineData = null; // Clear non-reactive flexline data
           console.log('Drawing canceled');
           actionTaken = true;
         }
@@ -2386,13 +1764,6 @@ export default {
         e.preventDefault();
         return;
       }
-      
-      // Toggle snap to objects with 'o' key
-      if (e.key === 'o' && !e.ctrlKey && !e.metaKey) {
-        this.$emit('toggle-snap-objects');
-        e.preventDefault();
-        return;
-      }
     },
     deleteSelected() {
       const filteredShapes = this.shapes.filter(shape => {
@@ -2406,72 +1777,15 @@ export default {
       });
       this.$emit('shapes-selected', []);
     },
-    // Alias for getShapeAt for compatibility
-    getShapeAtPosition(x, y) {
-      return this.getShapeAt(x, y);
-    },
-    
-    // Convert screen coordinates to world coordinates
-    screenToWorld(x, y) {
-      const centerX = (this.canvasWidth - this.canvasWidth * this.zoom) / 2 + this.offsetX;
-      const centerY = (this.canvasHeight - this.canvasHeight * this.zoom) / 2 + this.offsetY;
-      return {
-        x: (x - centerX) / this.zoom,
-        y: (y - centerY) / this.zoom
-      };
-    },
-    
-    // Utility function to debounce frequent events
-    debounce(func, wait) {
-      let timeout;
-      return function(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          func.apply(context, args);
-        }, wait);
-      };
-    },
-    
-    // Select a shape
-    selectShape(shape) {
-      console.log('Selecting shape:', shape.id, shape.type, 
-        `(pageId: ${shape.pageId}, isBackgroundShape: ${shape.isBackgroundShape})`);
-      
-      // Skip shapes from different pages
-      const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-      if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-        console.log('Cannot select shape from different page:', shape.id);
-        return;
-      }
-      
-      // Skip shapes from foreground pages (they should not be selectable)
-      if (shape.pageId && this.visibleLayers.some(layer => 
-          layer.pageId === shape.pageId && layer.type === 'foreground')) {
-        console.log('Cannot select shape from foreground page:', shape.id);
-        return;
-      }
-      
-      this.localSelectedShapes = [shape];
-      this.$emit('shapes-selected', [shape]);
-      this.render();
-    },
-    
     getShapeAt(x, y) {
       console.log('Checking for shape at', x, y, 'with', this.shapes.length, 'shapes');
-      console.log('Active layer:', this.activeLayer);
       
       // Log the first few shapes for debugging
       const shapesToLog = Math.min(5, this.shapes.length);
       for (let i = 0; i < shapesToLog; i++) {
         const shape = this.shapes[i];
-        console.log(`Shape ${i}:`, shape.type, shape.id, 'at', shape.x, shape.y, shape.width, shape.height, 
-          'isBackgroundShape:', shape.isBackgroundShape, 'pageId:', shape.pageId);
+        console.log(`Shape ${i}:`, shape.type, shape.id, 'at', shape.x, shape.y, shape.width, shape.height);
       }
-      
-      // Get the active page ID
-      const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-      console.log('Active page ID:', activePageId);
       
       // Start from the top of the stack (last shape drawn)
       for (let i = this.shapes.length - 1; i >= 0; i--) {
@@ -2479,20 +1793,6 @@ export default {
         
         // Skip shapes that are explicitly marked as not selectable
         if (shape.selectable === false) {
-          console.log('Skipping non-selectable shape:', shape.id);
-          continue;
-        }
-        
-        // Skip shapes from different pages
-        if (activePageId && shape.pageId && shape.pageId !== activePageId) {
-          console.log('Skipping shape from different page:', shape.id, shape.type, 'page:', shape.pageId);
-          continue;
-        }
-        
-        // Skip shapes from foreground pages (they should not be selectable)
-        if (shape.pageId && this.visibleLayers.some(layer => 
-            layer.pageId === shape.pageId && layer.type === 'foreground')) {
-          console.log('Skipping shape from foreground page:', shape.id, shape.type, 'page:', shape.pageId);
           continue;
         }
         
@@ -2805,8 +2105,6 @@ export default {
         
         // Add the select cursor class
         canvas.classList.add('cursor-select');
-        
-        console.log('Canvas classes after direct manipulation:', canvas.className);
       }
       
       // Reset any active drawing or selection
@@ -2831,7 +2129,8 @@ export default {
      * This is a more aggressive approach to ensure the cursor changes
      */
     forceSelectModeDirectly() {
-      console.log('DIRECTLY forcing select mode');
+      // Remove excessive logging
+      // console.log('DIRECTLY forcing select mode');
       
       // Only emit events - don't try to modify the prop directly
       this.$emit('update:tool', 'select');
@@ -3788,14 +3087,21 @@ export default {
         group: [],
         polygon: [], // Add support for polygon shape type
         select: [],  // Add support for select shape type
-        'excel-table': [], // Add support for Excel table shape type
-        'connection-point': [] // Add support for connection points
+        'excel-table': [] // Add support for Excel table shape type
       };
+      // Keep track of unknown shape types to avoid duplicate warnings
+      const unknownShapeTypes = new Set();
+      
       this.shapes.forEach(shape => {
         if (shapesByType[shape.type]) {
           shapesByType[shape.type].push(shape);
         } else {
-          console.warn('Unknown shape type:', shape.type);
+          // Only log each unknown shape type once per render cycle
+          if (!unknownShapeTypes.has(shape.type)) {
+            unknownShapeTypes.add(shape.type);
+            // Use debug level instead of warn to reduce console noise
+            console.debug('Skipping unsupported shape type:', shape.type);
+          }
         }
       });
       // Clean up old entries from shape cache
@@ -3807,34 +3113,23 @@ export default {
       let shapesSkipped = 0;
       let shapesCached = 0;
       
-      Object.entries(shapesByType).forEach(([type, shapes]) => {
-        if (shapes.length === 0) return;
-        shapes.forEach(shape => {
-          // Skip shapes on invisible layers
-          const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
-          if (!shapeLayer || !shapeLayer.visible) {
-            shapesSkipped++;
-            return;
-          }
-          
-          // Skip shapes outside the viewport
-          if (!this.isShapeVisible(shape)) {
-            shapesSkipped++;
-            return;
-          }
-          
-          // Special handling for connection points
-          if (shape.type === 'connection-point') {
-            // Only draw if we're not printing (connection points are not printable)
-            if (!this.isPrinting) {
-              drawConnectionPoint(ctx, shape);
-            }
-            shapesRendered++;
-            return;
-          }
-          
-          shapesRendered++;
-          ctx.save();
+      // Function to render a single shape
+      const renderShape = (shape, type) => {
+        // Skip shapes on invisible layers
+        const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
+        if (!shapeLayer || !shapeLayer.visible) {
+          shapesSkipped++;
+          return;
+        }
+        
+        // Skip shapes outside the viewport
+        if (!this.isShapeVisible(shape)) {
+          shapesSkipped++;
+          return;
+        }
+        
+        shapesRendered++;
+        ctx.save();
           
           // Apply layer opacity if available
           if (shape._layerOpacity !== undefined) {
@@ -3945,20 +3240,21 @@ export default {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
           } else if (type === 'image') {
-            console.log('Rendering image shape:', {
-              id: shape.id,
-              layerId: shape.layerId,
-              src: shape.src ? shape.src.substring(0, 30) + '...' : 'undefined', // Truncate for logging
-              hasImage: !!shape.image,
-              isImageElement: shape.image instanceof HTMLImageElement,
-              isComplete: shape.image?.complete,
-              width: shape.width,
-              height: shape.height,
-              x: shape.x,
-              y: shape.y,
-              isLoading: shape.isLoading,
-              imageError: shape.imageError
-            });
+            // Remove excessive logging
+            // console.log('Rendering image shape:', {
+            //   id: shape.id,
+            //   layerId: shape.layerId,
+            //   src: shape.src ? shape.src.substring(0, 30) + '...' : 'undefined', // Truncate for logging
+            //   hasImage: !!shape.image,
+            //   isImageElement: shape.image instanceof HTMLImageElement,
+            //   isComplete: shape.image?.complete,
+            //   width: shape.width,
+            //   height: shape.height,
+            //   x: shape.x,
+            //   y: shape.y,
+            //   isLoading: shape.isLoading,
+            //   imageError: shape.imageError
+            // });
             
             // Successfully loaded image case
             if (shape.image instanceof HTMLImageElement && shape.image.complete) {
@@ -4139,75 +3435,7 @@ export default {
               }
               ctx.stroke();
             }
-          } else if (type === 'flexline') {
-            if (shape.points && shape.points.length > 1) {
-              ctx.beginPath();
-              
-              // Start at the first point
-              ctx.moveTo(shape.points[0][0], shape.points[0][1]);
-              
-              // For each segment, draw either a straight line or a rounded corner
-              for (let i = 1; i < shape.points.length; i++) {
-                const currentPoint = shape.points[i];
-                const prevPoint = shape.points[i-1];
-                
-                // If we have a corner radius and we're not at the last point
-                if (shape.cornerRadii && shape.cornerRadii.length >= i-1 && i < shape.points.length-1) {
-                  const cornerRadius = shape.cornerRadii[i-1] || 0;
-                  
-                  if (cornerRadius > 0) {
-                    // We need to calculate the corner points
-                    const nextPoint = shape.points[i+1];
-                    
-                    // Calculate direction vectors
-                    const v1 = [currentPoint[0] - prevPoint[0], currentPoint[1] - prevPoint[1]];
-                    const v2 = [nextPoint[0] - currentPoint[0], nextPoint[1] - currentPoint[1]];
-                    
-                    // Normalize vectors
-                    const len1 = Math.sqrt(v1[0]*v1[0] + v1[1]*v1[1]);
-                    const len2 = Math.sqrt(v2[0]*v2[0] + v2[1]*v2[1]);
-                    
-                    if (len1 > 0 && len2 > 0) {
-                      const n1 = [v1[0]/len1, v1[1]/len1];
-                      const n2 = [v2[0]/len2, v2[1]/len2];
-                      
-                      // Calculate the radius (can't be larger than half the shortest segment)
-                      const maxRadius = Math.min(len1, len2) / 2;
-                      const radius = Math.min(cornerRadius, maxRadius);
-                      
-                      // Calculate the corner points
-                      const cornerStart = [
-                        currentPoint[0] - n1[0] * radius,
-                        currentPoint[1] - n1[1] * radius
-                      ];
-                      
-                      const cornerEnd = [
-                        currentPoint[0] + n2[0] * radius,
-                        currentPoint[1] + n2[1] * radius
-                      ];
-                      
-                      // Draw line to the start of the corner
-                      ctx.lineTo(cornerStart[0], cornerStart[1]);
-                      
-                      // Draw the arc for the corner
-                      // We need to calculate the control points for a quadratic curve
-                      ctx.quadraticCurveTo(
-                        currentPoint[0], currentPoint[1], // Control point (the corner)
-                        cornerEnd[0], cornerEnd[1] // End point
-                      );
-                      
-                      // Continue to the next point from here
-                      continue;
-                    }
-                  }
-                }
-                
-                // If no corner radius or we're at the last point, just draw a line
-                ctx.lineTo(currentPoint[0], currentPoint[1]);
-              }
-              
-              ctx.stroke();
-            }
+          
           } else if (type === 'excel-table') {
             // Draw the table background
             ctx.rect(shape.x, shape.y, shape.width, shape.height);
@@ -4491,7 +3719,8 @@ export default {
             ctx.textBaseline = 'alphabetic';
           } else if (this.currentShape.type === 'pen') {
             if (this.currentShape.points && this.currentShape.points.length > 0) {
-              console.log('Rendering current pen with points:', this.currentShape.points.length);
+              // Remove excessive logging
+              // console.log('Rendering current pen with points:', this.currentShape.points.length);
               ctx.moveTo(this.currentShape.points[0][0], this.currentShape.points[0][1]);
               for (let i = 1; i < this.currentShape.points.length; i++) {
                 ctx.lineTo(this.currentShape.points[i][0], this.currentShape.points[i][1]);
@@ -5021,24 +4250,8 @@ export default {
       // If no shapes are selected, try to select a shape at the click position
       if (this.localSelectedShapes.length === 0) {
         const worldPos = this.screenToWorld(x, y);
-        console.log('Context menu at world pos:', worldPos.x, worldPos.y);
-        console.log('Active layer:', this.activeLayer);
-        console.log('Active page ID:', this.activeLayer?.pageId);
         const shape = this.getShapeAtPosition(worldPos.x, worldPos.y);
-        console.log('Shape found on context menu:', shape ? shape.type : 'none', 
-          shape ? `(id: ${shape.id}, pageId: ${shape.pageId}, isBackgroundShape: ${shape.isBackgroundShape})` : '');
-        
-        // Skip shapes from different pages
-        const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
-        if (shape && activePageId && shape.pageId && shape.pageId !== activePageId) {
-          console.log('Cannot select shape from different page in context menu:', shape.id);
-        } 
-        // Skip shapes from foreground pages (they should not be selectable)
-        else if (shape && shape.pageId && this.visibleLayers.some(layer => 
-            layer.pageId === shape.pageId && layer.type === 'foreground')) {
-          console.log('Cannot select shape from foreground page in context menu:', shape.id);
-        } 
-        else if (shape) {
+        if (shape) {
           this.selectShape(shape);
         }
       }

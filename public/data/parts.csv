@@ -1,0 +1,22 @@
+ItemNumber,PartNumber,Manufacturer,Supplier,Class,SubClass,Description,ProductCut
+98950,F-1200,ONICON,ALPS,FLOW,SINGLE TURBINE,Turbine flow meter for chilled water systems,C:\Work\CutSheets\F-1200-Catalog-Sheet.pdf
+98951,VG1240+843,Johnson Controls,National Supply,VALVE,2-WAY CONTROL,2-Way control valve 1/2",
+98952,TS-9100,Johnson Controls,HVAC Supply Inc,SENSORS,TEMPERATURE,Temperature sensor 10K NTC,
+98953,CP-8901,Siemens,Controls Depot,CONTROLLER,VAV,VAV Box Controller with integrated actuator,
+98954,P100,Honeywell,HVAC Supply Inc,SENSORS,PRESSURE,Differential pressure transmitter,
+98955,M9106-AGC-2,Johnson Controls,National Supply,ACTUATOR,DAMPER,Electric damper actuator 24V 0-10V control,
+98956,T775-SENS,Honeywell,Controls Depot,CONTROLLER,STANDALONE,Electronic standalone temperature controller,
+98957,VFD-15,ABB,Electrical Supply Co,DRIVE,VFD,15HP Variable Frequency Drive,
+98958,DPT-10,Siemens,Controls Depot,SENSORS,DIFFERENTIAL PRESSURE,Differential pressure transmitter 0-10V output,
+98959,AHU-CTRL-01,Johnson Controls,National Supply,CONTROLLER,AHU,Air Handling Unit Controller with BACnet,
+98960,RTD-100,Honeywell,HVAC Supply Inc,SENSORS,RTD,RTD Temperature Sensor PT100,
+98961,CO2-2000,Veris,Controls Depot,SENSORS,CO2,Wall mount CO2 sensor with display,
+98962,HMI-10,Siemens,Controls Depot,INTERFACE,HMI,10-inch touchscreen HMI panel,
+98963,VAV-ACT-24,Belimo,HVAC Supply Inc,ACTUATOR,VAV,VAV Box Actuator 24V,
+98964,MSTP-RTR,Johnson Controls,National Supply,NETWORK,ROUTER,MS/TP to IP Router,
+98965,WM-9100,Johnson Controls,HVAC Supply Inc,METER,WATER,Water meter with pulse output,
+98966,EM-5000,Siemens,Controls Depot,METER,ELECTRICAL,Electrical power meter with Modbus,
+98967,UV-LAMP-24,Honeywell,National Supply,IAQ,UV LIGHT,UV Germicidal Lamp 24-inch,
+98968,FILTER-MERV13,AAF,HVAC Supply Inc,FILTER,MERV13,MERV 13 Air Filter 24x24x2,
+98969,HUMIDIFIER-5,Condair,Controls Depot,HUMIDIFIER,STEAM,Steam humidifier 5 kg/h,
+98970,FREEZE-STAT,Johnson Controls,National Supply,SAFETY,FREEZE PROTECTION,Freeze protection thermostat manual reset

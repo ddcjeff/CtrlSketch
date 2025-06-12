@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import jsPDF from 'jspdf';
 import { saveAs } from 'file-saver';
 import { DOMParser } from 'xmldom';
+import * as XLSX from 'xlsx';
 
 export const useCanvasStore = defineStore('canvas', () => {
   // State
@@ -34,6 +35,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   ]); // Array of pages
   const activePageId = ref('page-1'); // ID of the active page
   const currentTool = ref('select'); // Current drawing tool
+  // Available tools: select, rectangle, ellipse, line, pen, text, image, flexline, hand, connection-point
   const currentStyles = ref({
     lineWidth: 2,
     stroke: '#000000',
@@ -52,9 +54,11 @@ export const useCanvasStore = defineStore('canvas', () => {
   const gridColor = ref('#000000'); // Grid color
   const showRulers = ref(false); // Toggle rulers visibility
   const snapToGrid = ref(false); // Toggle snap-to-grid
+  const snapToObjects = ref(true); // Toggle snap-to-objects (enabled by default)
   const showLayers = ref(false); // Toggle layers panel visibility
   const showShapeLibrary = ref(false); // Toggle shape library visibility
   const shapeLibraryPosition = ref({ x: 12, y: 12 }); // Shape library panel position
+  const shapeLibrarySize = ref({ width: 320, height: 796 }); // Shape library panel size (reduced by 2 inches / 192px)
   const isDraggingShapeLibrary = ref(false); // Shape library dragging state
   const dragOffsetShapeLibrary = ref({ x: 0, y: 0 }); // Shape library drag offset
   const showPageTabs = ref(false); // Toggle page tabs visibility
@@ -103,7 +107,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   const licenseNumber = ref('CS-2023-0001'); // License number
   const clipboard = ref([]); // Clipboard for cut/copy/paste
   const activeTab = ref('Insert'); // Active ribbon tab
-  const isGlossy = ref(false); // Glossy UI toggle
+  // UI state
   const shapeLibraries = ref([
     { id: 'default', name: 'Default Library' },
     { id: 'hvac', name: 'HVAC Components' },
@@ -138,92 +142,85 @@ export const useCanvasStore = defineStore('canvas', () => {
   );
   const canvasWidth = computed(() => 1632); // Fixed canvas width
   const canvasHeight = computed(() => 1056); // Fixed canvas height
-  const visibleShapes = computed(() => {
-    // First ensure shapes array is up-to-date with all shapes from all layers
-    if (shapes.value.length === 0 && layers.value.some(layer => layer.shapes && layer.shapes.length > 0)) {
-      shapes.value = getAllShapes();
+  // Store the last computed visible shapes as a non-reactive array
+  let _cachedVisibleShapes = [];
+  // Flag to indicate if cache is valid
+  let _isCacheValid = false;
+  // Timestamp of last computation
+  let _lastComputationTime = 0;
+  // Minimum time between full recomputations (ms)
+  const CACHE_THROTTLE_TIME = 500;
+  
+  // Function to compute visible shapes without triggering reactivity
+  function computeVisibleShapesNonReactive() {
+    // If cache is valid and it's been less than CACHE_THROTTLE_TIME since last computation, return cached value
+    const now = Date.now();
+    if (_isCacheValid && now - _lastComputationTime < CACHE_THROTTLE_TIME) {
+      console.log('Using cached visible shapes');
+      return _cachedVisibleShapes;
     }
     
-    console.log('Computing visibleShapes from shapes:', shapes.value.length);
+    console.log('Computing visible shapes non-reactively');
+    _lastComputationTime = now;
     
-    // If we have shapes but no visible layers, make all layers visible
-    if (shapes.value.length > 0 && !layers.value.some(layer => layer.visible)) {
-      console.log('No visible layers but shapes exist - making all layers visible');
-      layers.value = layers.value.map(layer => ({
-        ...layer,
-        visible: true
-      }));
-    }
+    // Get current page ID without using .value to avoid reactivity
+    const currentPageId = activePageId.value;
+    const currentShapes = [...shapes.value]; // Create a copy to avoid reactivity
+    const currentLayers = [...layers.value]; // Create a copy to avoid reactivity
     
-    const visibleLayerIds = visibleLayers.value.map(layer => layer.id);
-    console.log('Visible layer IDs:', visibleLayerIds);
+    // Get visible layer IDs
+    const visibleLayerIds = currentLayers
+      .filter(layer => layer.visible)
+      .map(layer => layer.id);
     
-    // Fix shapes with missing or invalid layerIds
-    let shapesNeedingFix = false;
+    // Get current page and background page
+    const currentPage = pages.value.find(p => p.id === currentPageId);
+    const backgroundPageId = currentPage?.backgroundPageId || '';
     
-    // Process shapes to fix any layerId issues
-    const processedShapes = shapes.value.map(shape => {
-      // Create a new shape object to avoid modifying the original
-      const newShape = { ...shape };
-      
-      // If shape has no layerId, assign it to the active layer
-      if (newShape.layerId === undefined || newShape.layerId === null) {
-        console.warn(`Shape ${newShape.id} has no layerId, assigning to active layer`);
-        newShape.layerId = activeLayerId.value;
-        shapesNeedingFix = true;
-      } 
-      // If shape has an invalid layerId (not in any layer), assign it to the active layer
-      else if (!layers.value.some(layer => layer.id === newShape.layerId)) {
-        console.warn(`Shape ${newShape.id} has invalid layerId ${newShape.layerId}, assigning to active layer`);
-        newShape.layerId = activeLayerId.value;
-        shapesNeedingFix = true;
-      }
-      
-      return newShape;
-    });
-    
-    // If we fixed any shapes, update the shapes array
-    if (shapesNeedingFix) {
-      console.log('Updating shapes with fixed layerIds');
-      shapes.value = processedShapes;
-    }
-    
-    // Now filter for visibility
-    const result = processedShapes
+    // Filter shapes for visibility and current page
+    const result = currentShapes
       .filter(shape => {
+        // Check if shape belongs to the current page or its background page
+        const isCurrentPage = !shape.pageId || 
+                             shape.pageId === currentPageId || 
+                             (backgroundPageId && shape.pageId === backgroundPageId);
+        
+        // Check if shape's layer is visible
         const isVisible = visibleLayerIds.includes(shape.layerId);
-        if (!isVisible) {
-          console.log('Filtering out shape due to invisible layer:', shape);
-        }
-        return isVisible;
+        
+        return isCurrentPage && isVisible;
       })
       .map(shape => {
+        // Create a new object to avoid modifying the original
         const shapeCopy = { ...shape };
-        const layer = visibleLayers.value.find(l => l.id === shapeCopy.layerId);
+        const layer = currentLayers.find(l => l.id === shapeCopy.layerId);
         if (layer && layer.opacity < 100) {
           shapeCopy._layerOpacity = layer.opacity / 100;
         }
         return shapeCopy;
       });
     
-    console.log('Computed visibleShapes:', result.length);
-    
-    // If we have shapes but none are visible, make the active layer visible
-    if (shapes.value.length > 0 && result.length === 0) {
-      console.log('No visible shapes but shapes exist - making active layer visible');
-      const activeLayerIndex = layers.value.findIndex(l => l.id === activeLayerId.value);
-      if (activeLayerIndex >= 0) {
-        layers.value[activeLayerIndex].visible = true;
-        // This will trigger a recomputation of visibleShapes
-      }
-    }
+    // Update cache
+    _cachedVisibleShapes = result;
+    _isCacheValid = true;
     
     return result;
+  }
+  
+  // Function to invalidate the cache
+  function invalidateVisibleShapesCache() {
+    _isCacheValid = false;
+  }
+  
+  // Computed property that uses the non-reactive function
+  const visibleShapes = computed(() => {
+    // This will only trigger a recomputation when its dependencies change
+    // but the actual computation is done in a non-reactive way
+    return computeVisibleShapesNonReactive();
   });
 
   // Actions
   function initializeApp() {
-    initializeGlossyPreference();
     initializeDefaultPage();
     
     // Ensure the default layer exists
@@ -249,54 +246,6 @@ export const useCanvasStore = defineStore('canvas', () => {
       autoSaveEnabled.value = true;
       initAutoSave();
     }, 2000);
-  }
-
-  function initializeGlossyPreference() {
-    try {
-      const savedPreference = localStorage.getItem('glossyUI');
-      if (savedPreference === 'true') {
-        isGlossy.value = true;
-        applyGlossyEffect();
-      }
-    } catch (error) {
-      console.error('Error initializing glossy preference:', error);
-    }
-  }
-
-  function toggleGlossy() {
-    isGlossy.value = !isGlossy.value;
-    localStorage.setItem('glossyUI', isGlossy.value);
-    if (isGlossy.value) {
-      applyGlossyEffect();
-    } else {
-      removeGlossyEffect();
-    }
-  }
-
-  function applyGlossyEffect() {
-    try {
-      const menuBar = document.querySelector('[data-glossy-target="menubar"]');
-      const menuButtons = document.querySelector('[data-glossy-target="menu-buttons"]');
-      const ribbon = document.querySelector('[data-glossy-target="ribbon"]');
-      if (menuBar) menuBar.classList.add('glossy-menubar');
-      if (menuButtons) menuButtons.classList.add('glossy-buttons', 'glossy-tabs');
-      if (ribbon) ribbon.classList.add('glossy-ribbon');
-    } catch (error) {
-      console.error('Error applying glossy effect:', error);
-    }
-  }
-
-  function removeGlossyEffect() {
-    try {
-      const menuBar = document.querySelector('[data-glossy-target="menubar"]');
-      const menuButtons = document.querySelector('[data-glossy-target="menu-buttons"]');
-      const ribbon = document.querySelector('[data-glossy-target="ribbon"]');
-      if (menuBar) menuBar.classList.remove('glossy-menubar');
-      if (menuButtons) menuButtons.classList.remove('glossy-buttons', 'glossy-tabs');
-      if (ribbon) ribbon.classList.remove('glossy-ribbon');
-    } catch (error) {
-      console.error('Error removing glossy effect:', error);
-    }
   }
 
   function initializeDefaultPage() {
@@ -366,6 +315,9 @@ export const useCanvasStore = defineStore('canvas', () => {
         movable: true,
         rotation: s.rotation || 0,
         layerId: s.layerId || activeLayerId.value || 'layer-0',
+        pageId: s.pageId || activePageId.value, // Add pageId
+        stroke: 'transparent', // Set stroke to transparent to avoid black box
+        lineWidth: 0, // Set line width to 0
         isImported: true
       };
       
@@ -377,6 +329,7 @@ export const useCanvasStore = defineStore('canvas', () => {
         ...s,
         id: uniqueId,
         layerId: s.layerId || activeLayerId.value || 'layer-0',
+        pageId: s.pageId || activePageId.value, // Add pageId
         x: s.x !== undefined ? s.x : 0,
         y: s.y !== undefined ? s.y : 0,
         width: s.width !== undefined ? s.width : 100,
@@ -436,11 +389,29 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
     newShapes.push(newShape);
   });
   
-  // Update the main shapes array directly
-  const allShapes = getAllShapes();
+  // Update the current page's shapes
+  const currentPage = pages.value.find(p => p.id === activePageId.value);
+  if (currentPage) {
+    if (!currentPage.shapes) {
+      currentPage.shapes = [];
+    }
+    
+    // Add the new shapes to the current page
+    newShapes.forEach(shape => {
+      // Check if the shape is already in the page's shapes
+      const existingIndex = currentPage.shapes.findIndex(s => s.id === shape.id);
+      if (existingIndex === -1) {
+        currentPage.shapes.push(shape);
+      }
+    });
+    
+    console.log(`Added ${newShapes.length} shapes to page ${activePageId.value}, now has ${currentPage.shapes.length} shapes`);
+  } else {
+    console.warn(`Current page ${activePageId.value} not found, shapes may not be properly associated with a page`);
+  }
   
-  // Add all new shapes to the main shapes array
-  shapes.value = [...allShapes];
+  // Update the main shapes array with the current page's shapes
+  shapes.value = getPageShapes(activePageId.value);
   
   console.log('Updated shapes array, now has', shapes.value.length, 'shapes');
   
@@ -449,123 +420,291 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   documentModified.value = true;
   performAutoSaveDebounced();
   
-  return newShapes.length === 1 ? newShapes[0] : newShapes;
+  // Return the added shapes
+  const result = newShapes.length === 1 ? newShapes[0] : newShapes;
+  console.log('Returning added shapes:', result);
+  return result;
 }
 
+  // Track shapes being updated to prevent recursive updates
+  const shapesBeingUpdated = new Set();
+  // Queue for batching shape updates
+  const updateQueue = [];
+  // Flag to indicate if an update is scheduled
+  let isUpdateScheduled = false;
+  
+  // Process the update queue non-reactively
+  function processUpdateQueue() {
+    if (updateQueue.length === 0) {
+      isUpdateScheduled = false;
+      return;
+    }
+    
+    console.log(`Processing update queue with ${updateQueue.length} shapes`);
+    
+    try {
+      // Create a copy of the current shapes array
+      const currentShapes = [...shapes.value];
+      
+      // Get unique shape IDs from the queue to avoid processing the same shape multiple times
+      const uniqueShapeIds = new Set(updateQueue.map(shape => shape.id));
+      const uniqueShapes = [];
+      
+      // For each unique shape ID, use the latest update in the queue
+      uniqueShapeIds.forEach(shapeId => {
+        // Find the latest update for this shape (last one in the queue)
+        const latestUpdate = [...updateQueue].reverse().find(shape => shape.id === shapeId);
+        if (latestUpdate) {
+          uniqueShapes.push(latestUpdate);
+        }
+      });
+      
+      console.log(`Processing ${uniqueShapes.length} unique shapes after deduplication`);
+      
+      // Process all shapes in the queue
+      uniqueShapes.forEach(updatedShape => {
+        // Find the shape in the current array
+        const index = currentShapes.findIndex(s => s.id === updatedShape.id);
+        if (index === -1) {
+          console.warn('Shape not found in current shapes array:', updatedShape.id);
+          return;
+        }
+        
+        // Create a merged shape with all properties
+        const mergedShape = {
+          ...updatedShape,
+          // Ensure these properties are explicitly set
+          x: updatedShape.x,
+          y: updatedShape.y,
+          movable: updatedShape.movable !== false,
+          // Use the already validated and potentially converted fill/stroke values
+          fill: updatedShape.fill || '#000000',
+          stroke: updatedShape.stroke || '#000000'
+        };
+        
+        // Update the shape in our copy
+        currentShapes[index] = mergedShape;
+        
+        // Also update in layers and pages (non-reactively)
+        updateShapeInLayersAndPages(mergedShape);
+      });
+      
+      // Now update the shapes array in one batch operation
+      shapes.value = currentShapes;
+      
+      // Invalidate the visible shapes cache
+      invalidateVisibleShapesCache();
+      
+      // Save to history
+      saveToHistory();
+      documentModified.value = true;
+      performAutoSaveDebounced();
+    } catch (error) {
+      console.error('Error processing update queue:', error);
+    } finally {
+      // Clear the queue
+      updateQueue.length = 0;
+      
+      // Mark update as complete
+      isUpdateScheduled = false;
+    }
+  }
+  
+  // Update a shape in layers and pages without triggering reactivity
+  function updateShapeInLayersAndPages(updatedShape) {
+    // Update in layers
+    for (let i = 0; i < layers.value.length; i++) {
+      const layer = layers.value[i];
+      if (layer.id === updatedShape.layerId) {
+        const shapeIndex = layer.shapes.findIndex(s => s.id === updatedShape.id);
+        if (shapeIndex !== -1) {
+          layer.shapes[shapeIndex] = updatedShape;
+        }
+      }
+    }
+    
+    // Update in pages
+    for (let i = 0; i < pages.value.length; i++) {
+      const page = pages.value[i];
+      if (page.shapes) {
+        const shapeIndex = page.shapes.findIndex(s => s.id === updatedShape.id);
+        if (shapeIndex !== -1) {
+          page.shapes[shapeIndex] = updatedShape;
+        }
+      }
+    }
+  }
+  
+  // Main updateShape function that queues updates
   function updateShape(updatedShape) {
-    console.log('Updating shape:', updatedShape.id, 'with properties:', updatedShape);
-    if (!shapes.value.find(s => s.id === updatedShape.id)) {
-  console.warn('Shape not found, skipping update to prevent duplication:', updatedShape.id);
-  return;
-}
-    
-    // Ensure the updated shape has the movable property set
-    if (updatedShape.movable === undefined) {
-      updatedShape.movable = true;
-      console.log('Added missing movable property to shape:', updatedShape.id);
+    // If no shape ID, skip
+    if (!updatedShape || !updatedShape.id) {
+      console.warn('Invalid shape passed to updateShape');
+      return;
     }
     
-    // Ensure fill and stroke have valid values
-    if (!updatedShape.fill || updatedShape.fill === '') {
-      updatedShape.fill = '#3B82F6'; // Default blue if empty
-      console.log('Added missing fill property to shape:', updatedShape.id);
+    // Special handling for drag updates - bypass the queue and update directly
+    // This avoids recursion issues during drag operations
+    if (updatedShape._isDragUpdate) {
+      // Create a clean copy without the _isDragUpdate flag
+      const dragShape = { ...updatedShape };
+      delete dragShape._isDragUpdate;
+      
+      // Process minimal validation for drag operations
+      if (!dragShape.fill) dragShape.fill = '#3B82F6';
+      if (!dragShape.stroke) dragShape.stroke = '#000000';
+      
+      // Find the shape in the current array and update it directly
+      const index = shapes.value.findIndex(s => s.id === dragShape.id);
+      if (index !== -1) {
+        // Update the shape in the array
+        const updatedShapes = [...shapes.value];
+        updatedShapes[index] = {
+          ...shapes.value[index],
+          ...dragShape,
+          // Ensure position is updated
+          x: dragShape.x,
+          y: dragShape.y
+        };
+        
+        // Update the shapes array
+        shapes.value = updatedShapes;
+        
+        // Also update in layers and pages (non-reactively)
+        updateShapeInLayersAndPages(dragShape);
+        
+        // Don't save to history during drag to avoid excessive history entries
+        // We'll save when the drag is complete
+        documentModified.value = true;
+        
+        // Invalidate the visible shapes cache
+        invalidateVisibleShapesCache();
+        
+        return;
+      }
     }
     
-    // Handle fill transparency
-    if (updatedShape.fill && (updatedShape.fill === 'rgba(255,255,255,0)' || updatedShape.fill === 'rgba(0,0,0,0)')) {
-      // If the fill is an rgba with 0 alpha, set the transparency flag
-      updatedShape.fill = '#000000'; 
-      updatedShape._isFillTransparent = true;
-      console.log('Converted rgba fill to transparent for shape:', updatedShape.id);
-    } 
+    // Standard update process for non-drag operations
     
-    // If _isFillTransparent is explicitly set in the update, respect that value
-    // Otherwise, if it's undefined, set it to false
-    if (updatedShape._isFillTransparent === undefined) {
-      updatedShape._isFillTransparent = false;
-      console.log('Setting default fill transparency (false) for shape:', updatedShape.id);
-    } else {
-      console.log(`Fill transparency flag is ${updatedShape._isFillTransparent} for shape:`, updatedShape.id);
+    // Prevent recursive updates on the same shape
+    if (shapesBeingUpdated.has(updatedShape.id)) {
+      console.warn('Shape already being updated, skipping to prevent recursion:', updatedShape.id);
+      return;
     }
     
-    // Force _isFillTransparent to false if we're setting a non-transparent color
-    if (updatedShape.fill && updatedShape.fill !== '#000000' && updatedShape._isFillTransparent === true) {
-      console.log('Forcing fill transparency to false for non-transparent color:', updatedShape.fill);
-      updatedShape._isFillTransparent = false;
+    console.log('Queueing shape update:', updatedShape.id);
+    
+    // Add this shape to the set of shapes being updated
+    shapesBeingUpdated.add(updatedShape.id);
+    
+    try {
+      // Process the shape before adding to queue
+      const processedShape = { ...updatedShape };
+      
+      // Ensure the shape has the movable property set
+      if (processedShape.movable === undefined) {
+        processedShape.movable = true;
+      }
+      
+      // Ensure fill and stroke have valid values
+      if (!processedShape.fill || processedShape.fill === '') {
+        processedShape.fill = '#3B82F6'; // Default blue if empty
+      }
+      
+      // Handle fill transparency
+      if (processedShape.fill && (processedShape.fill === 'rgba(255,255,255,0)' || processedShape.fill === 'rgba(0,0,0,0)')) {
+        processedShape.fill = '#000000'; 
+        processedShape._isFillTransparent = true;
+      } 
+      
+      // Set default fill transparency if not specified
+      if (processedShape._isFillTransparent === undefined) {
+        processedShape._isFillTransparent = false;
+      }
+      
+      // Force _isFillTransparent to false if we're setting a non-transparent color
+      if (processedShape.fill && processedShape.fill !== '#000000' && processedShape._isFillTransparent === true) {
+        processedShape._isFillTransparent = false;
+      }
+      
+      // Handle missing stroke
+      if (!processedShape.stroke || processedShape.stroke === '') {
+        processedShape.stroke = '#000000'; 
+        processedShape._isStrokeTransparent = true;
+      }
+      
+      // Handle stroke transparency
+      if (processedShape.stroke && (processedShape.stroke === 'rgba(255,255,255,0)' || processedShape.stroke === 'rgba(0,0,0,0)')) {
+        processedShape.stroke = '#000000'; 
+        processedShape._isStrokeTransparent = true;
+      }
+      
+      // Set default stroke transparency if not specified
+      if (processedShape._isStrokeTransparent === undefined) {
+        processedShape._isStrokeTransparent = false;
+      }
+      
+      // Force _isStrokeTransparent to false if we're setting a non-transparent color
+      if (processedShape.stroke && processedShape.stroke !== '#000000' && processedShape._isStrokeTransparent === true) {
+        processedShape._isStrokeTransparent = false;
+      }
+      
+      // Add to update queue
+      updateQueue.push(processedShape);
+      
+      // Schedule processing if not already scheduled
+      if (!isUpdateScheduled) {
+        isUpdateScheduled = true;
+        
+        // Use requestAnimationFrame for better performance
+        requestAnimationFrame(() => {
+          processUpdateQueue();
+        });
+      }
+    } catch (error) {
+      console.error('Error processing shape update:', error);
+    } finally {
+      // Remove this shape from the set after a short delay
+      // This ensures we don't process the same shape multiple times in quick succession
+      // but also allows future updates to the same shape after processing is complete
+      setTimeout(() => {
+        shapesBeingUpdated.delete(updatedShape.id);
+      }, 50); // Reduced from 100ms to 50ms for faster response
     }
-    
-    // Handle missing stroke
-    if (!updatedShape.stroke || updatedShape.stroke === '') {
-      updatedShape.stroke = '#000000'; 
-      updatedShape._isStrokeTransparent = true; // Default black if empty
-      console.log('Added missing stroke property to shape:', updatedShape.id);
-    }
-    
-    // Handle stroke transparency
-    if (updatedShape.stroke && (updatedShape.stroke === 'rgba(255,255,255,0)' || updatedShape.stroke === 'rgba(0,0,0,0)')) {
-      // If the stroke is an rgba with 0 alpha, set the transparency flag
-      updatedShape.stroke = '#000000'; 
-      updatedShape._isStrokeTransparent = true; // Default transparent if empty
-      console.log('Converted rgba stroke to transparent for shape:', updatedShape.id);
-    }
-    
-    // If _isStrokeTransparent is explicitly set in the update, respect that value
-    // Otherwise, if it's undefined, set it to false
-    if (updatedShape._isStrokeTransparent === undefined) {
-      updatedShape._isStrokeTransparent = false;
-      console.log('Setting default stroke transparency (false) for shape:', updatedShape.id);
-    } else {
-      console.log(`Stroke transparency flag is ${updatedShape._isStrokeTransparent} for shape:`, updatedShape.id);
-    }
-    
-    // Force _isStrokeTransparent to false if we're setting a non-transparent color
-    if (updatedShape.stroke && updatedShape.stroke !== '#000000' && updatedShape._isStrokeTransparent === true) {
-      console.log('Forcing stroke transparency to false for non-transparent color:', updatedShape.stroke);
-      updatedShape._isStrokeTransparent = false;
-    }
-    
-    // Create a merged shape with all properties
-    const mergedShape = {
-      ...updatedShape,
-      // Ensure these properties are explicitly set
-      x: updatedShape.x,
-      y: updatedShape.y,
-      movable: updatedShape.movable !== false,
-      // Use the already validated and potentially converted fill/stroke values
-      fill: updatedShape.fill,
-      stroke: updatedShape.stroke
-    };
-    
-    console.log('Merged shape for update:', mergedShape);
-    
-    // Update the shape in the main shapes array
-    shapes.value = shapes.value.map((shape) =>
-      shape.id === updatedShape.id ? mergedShape : shape
-    );
-    
-    // Update the shape in its layer
-    const layerIndex = layers.value.findIndex((layer) => layer.id === updatedShape.layerId);
-    if (layerIndex !== -1) {
-      layers.value[layerIndex].shapes = layers.value[layerIndex].shapes.map((shape) =>
-        shape.id === updatedShape.id ? mergedShape : shape
-      );
-    }
-    
-    // Log the updated shape for debugging
-    const updatedShapeInStore = shapes.value.find(s => s.id === updatedShape.id);
-    console.log('Shape after update:', updatedShapeInStore);
-    
-    saveToHistory();
-    documentModified.value = true;
-    performAutoSaveDebounced();
   }
 
   function deleteShapes(shapeIds) {
+    console.log(`Deleting shapes with IDs: ${shapeIds.join(', ')}`);
+    
+    // Remove from main shapes array
     shapes.value = shapes.value.filter((shape) => !shapeIds.includes(shape.id));
+    
+    // Remove from layers
     layers.value.forEach((layer) => {
+      const beforeCount = layer.shapes.length;
       layer.shapes = layer.shapes.filter((shape) => !shapeIds.includes(shape.id));
+      const afterCount = layer.shapes.length;
+      
+      if (beforeCount !== afterCount) {
+        console.log(`Removed ${beforeCount - afterCount} shapes from layer ${layer.id}`);
+      }
     });
+    
+    // Remove from current page
+    const currentPage = pages.value.find(p => p.id === activePageId.value);
+    if (currentPage && currentPage.shapes) {
+      const beforeCount = currentPage.shapes.length;
+      currentPage.shapes = currentPage.shapes.filter((shape) => !shapeIds.includes(shape.id));
+      const afterCount = currentPage.shapes.length;
+      
+      if (beforeCount !== afterCount) {
+        console.log(`Removed ${beforeCount - afterCount} shapes from page ${activePageId.value}`);
+      }
+    }
+    
+    // Clear from selection
     selectedShapes.value = selectedShapes.value.filter((id) => !shapeIds.includes(id));
+    
     saveToHistory();
     documentModified.value = true;
     performAutoSaveDebounced();
@@ -573,7 +712,17 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
 
   function selectShapes(shapeIds) {
     console.log('Selecting shapes, IDs:', shapeIds, 'Current shapes:', shapes.value.length);
-selectedShapes.value = [...shapeIds];
+    
+    // Check if the selection has actually changed to prevent unnecessary updates
+    const currentIds = selectedShapes.value;
+    const newIds = [...shapeIds];
+    
+    // Only update if the arrays are different
+    if (currentIds.length !== newIds.length || 
+        !currentIds.every(id => newIds.includes(id)) || 
+        !newIds.every(id => currentIds.includes(id))) {
+      selectedShapes.value = newIds;
+    }
   }
 
   function addLayer() {
@@ -738,17 +887,66 @@ function setActiveTab(tab) {
   activeTab.value = tab;
 }
   function setActivePage(pageId) {
-    if (activePageId.value !== pageId) {
-      if (activePage.value) {
-        pages.value = pages.value.map((page) =>
-          page.id === activePageId.value ? { ...page, shapes: [...shapes.value] } : page
-        );
-      }
-      activePageId.value = pageId;
-      shapes.value = getPageShapes(pageId);
-      selectedShapes.value = [];
-      saveToHistory();
+    console.log('setActivePage called with pageId:', pageId);
+    console.log('Current activePageId:', activePageId.value);
+    console.log('Available pages:', pages.value.map(p => `${p.id} (${p.name})`));
+    
+    // If trying to set the same page, just return
+    if (pageId === activePageId.value) {
+      console.log('Already on this page, no change needed');
+      return activePageId.value;
     }
+    
+    // Verify the page exists
+    const targetPage = pages.value.find(p => p.id === pageId);
+    if (!targetPage) {
+      console.error(`Page with ID ${pageId} not found`);
+      return activePageId.value;
+    }
+    
+    // Save current shapes to the current page before switching
+    if (activePage.value) {
+      // Filter shapes that belong to the current page
+      const currentPageShapes = shapes.value.filter(shape => 
+        !shape.pageId || shape.pageId === activePageId.value
+      );
+      
+      // Deep clone the shapes to avoid reference issues
+      const currentShapes = JSON.parse(JSON.stringify(currentPageShapes));
+      
+      // Update the current page with the current shapes
+      pages.value = pages.value.map((page) =>
+        page.id === activePageId.value ? { ...page, shapes: currentShapes } : page
+      );
+      
+      console.log(`Saved ${currentShapes.length} shapes to page ${activePageId.value}`);
+    }
+    
+    // Set the new active page
+    activePageId.value = pageId;
+    console.log('activePageId.value set to:', activePageId.value);
+    
+    // Load shapes from the new page (this already includes background page shapes)
+    const newShapes = getPageShapes(pageId);
+    
+    // Log the background page if any
+    const currentTargetPage = pages.value.find(p => p.id === pageId);
+    if (currentTargetPage && currentTargetPage.type === 'foreground' && currentTargetPage.backgroundPageId) {
+      console.log(`Page ${pageId} has background page: ${currentTargetPage.backgroundPageId}`);
+    }
+    
+    // Update the shapes array (getPageShapes already handles pageId assignment)
+    shapes.value = newShapes;
+    console.log(`Loaded ${newShapes.length} shapes from page ${pageId}`);
+    
+    // Clear selection when switching pages
+    selectedShapes.value = [];
+    
+    // Save this state to history
+    saveToHistory();
+    
+    // Return the new active page ID for confirmation
+    return activePageId.value;
   }
 
   function renamePage(pageId, name) {
@@ -790,12 +988,61 @@ function setActiveTab(tab) {
 
   function getPageShapes(pageId) {
     const page = pages.value.find((p) => p.id === pageId);
-    if (!page) return [];
-    let allShapes = [...(page.shapes || [])];
+    if (!page) {
+      console.warn(`Page with ID ${pageId} not found`);
+      return [];
+    }
+    
+    // Ensure page.shapes is an array
+    if (!page.shapes) {
+      page.shapes = [];
+    } else if (!Array.isArray(page.shapes)) {
+      console.warn(`Page ${pageId} has invalid shapes property, resetting to empty array`);
+      page.shapes = [];
+    }
+    
+    // Create a deep copy of the shapes to avoid reference issues
+    let allShapes = JSON.parse(JSON.stringify(page.shapes || []));
+    
+    // Ensure all shapes have the correct pageId
+    allShapes = allShapes.map(shape => ({
+      ...shape,
+      pageId: pageId // Ensure each shape knows which page it belongs to
+    }));
+    
+    // If this is a foreground page with a background, include background shapes
     if (page.type === 'foreground' && page.backgroundPageId) {
       const bgPage = pages.value.find((p) => p.id === page.backgroundPageId);
-      if (bgPage) allShapes = [...(bgPage.shapes || []), ...allShapes];
+      if (bgPage) {
+        console.log(`Including shapes from background page ${bgPage.id} for page ${pageId}`);
+        
+        // Ensure bgPage.shapes is an array
+        if (!bgPage.shapes) {
+          bgPage.shapes = [];
+        } else if (!Array.isArray(bgPage.shapes)) {
+          console.warn(`Background page ${bgPage.id} has invalid shapes property`);
+          bgPage.shapes = [];
+        }
+        
+        // Add background shapes first (so they appear behind foreground shapes)
+        let bgShapes = JSON.parse(JSON.stringify(bgPage.shapes || []));
+        
+        // Ensure background shapes have the correct pageId
+        bgShapes = bgShapes.map(shape => ({
+          ...shape,
+          pageId: bgPage.id, // Ensure each background shape knows which page it belongs to
+          isBackgroundShape: true // Mark as background shape for special handling
+        }));
+        
+        allShapes = [...bgShapes, ...allShapes];
+        
+        console.log(`Loaded ${bgShapes.length} shapes from background page ${bgPage.id}`);
+      } else {
+        console.warn(`Background page ${page.backgroundPageId} not found for page ${pageId}`);
+      }
     }
+    
+    console.log(`Returning ${allShapes.length} total shapes for page ${pageId}`);
     return allShapes;
   }
 
@@ -846,6 +1093,10 @@ function setActiveTab(tab) {
 
   function toggleSnapToGrid() {
     snapToGrid.value = !snapToGrid.value;
+  }
+  
+  function toggleSnapToObjects() {
+    snapToObjects.value = !snapToObjects.value;
   }
 
   function toggleLayersPanel() {
@@ -904,6 +1155,27 @@ function setActiveTab(tab) {
     document.removeEventListener('touchmove', dragShapeLibrary);
     document.removeEventListener('touchend', endDragShapeLibrary);
     if (event) event.preventDefault();
+  }
+  
+  function setShapeLibrarySize(width, height) {
+    console.log('Setting shape library size:', { width, height });
+    
+    // Ensure we're working with numbers
+    const numWidth = Number(width);
+    const numHeight = Number(height);
+    
+    if (isNaN(numWidth) || isNaN(numHeight)) {
+      console.error('Invalid dimensions for shape library:', { width, height });
+      return;
+    }
+    
+    // Set the new size with minimum constraints
+    shapeLibrarySize.value = {
+      width: Math.max(250, numWidth),
+      height: Math.max(300, numHeight)
+    };
+    
+    console.log('New shape library size:', shapeLibrarySize.value);
   }
 
   function togglePageTabs() {
@@ -1017,10 +1289,30 @@ function setActiveTab(tab) {
     partPropertiesData.value = { ...properties };
     showPartPropertiesDialog.value = true;
   }
+  
+  // Shape properties dialog
+  const showShapePropertiesDialog = ref(false);
+  const shapePropertiesData = ref(null);
+  
+  function toggleShapePropertiesDialog(shape) {
+    shapePropertiesData.value = shape ? { ...shape } : null;
+    showShapePropertiesDialog.value = !!shape;
+  }
+  
+  // Alignment dialog
+  const showAlignmentDialog = ref(false);
+  const alignmentShapeIds = ref([]);
+  
+  function toggleAlignmentDialog(shapeIds) {
+    alignmentShapeIds.value = shapeIds || [];
+    showAlignmentDialog.value = !showAlignmentDialog.value;
+  }
 
   function applyPartProperties(properties) {
+    let updatedShape = null;
+    
     if (pendingShapeData.value) {
-      createShapeFromLibrary({ clientX: 400, clientY: 300 }, properties);
+      updatedShape = createShapeFromLibrary({ clientX: 400, clientY: 300 }, properties);
     } else if (selectedShapes.value.length > 0) {
       // Apply part properties to the selected shape
       const shapeId = selectedShapes.value[0];
@@ -1028,7 +1320,7 @@ function setActiveTab(tab) {
       
       if (shapeIndex !== -1) {
         // Create a copy of the shape
-        const updatedShape = { ...shapes.value[shapeIndex] };
+        updatedShape = { ...shapes.value[shapeIndex] };
         
         // Add part properties to the shape
         updatedShape.partProperties = { ...properties };
@@ -1047,6 +1339,112 @@ function setActiveTab(tab) {
     
     showPartPropertiesDialog.value = false;
     pendingShapeData.value = null;
+  }
+  
+  // Group shapes
+  function groupShapes(shapeIds) {
+    if (!shapeIds || shapeIds.length < 2) return;
+    
+    // Get the shapes to group
+    const shapesToGroup = shapes.value.filter(shape => shapeIds.includes(shape.id));
+    if (shapesToGroup.length < 2) return;
+    
+    // Calculate the bounding box of all shapes
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    
+    shapesToGroup.forEach(shape => {
+      minX = Math.min(minX, shape.x);
+      minY = Math.min(minY, shape.y);
+      maxX = Math.max(maxX, shape.x + (shape.width || 0));
+      maxY = Math.max(maxY, shape.y + (shape.height || 0));
+    });
+    
+    // Create a group shape
+    const groupShape = {
+      id: `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'group',
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      children: shapesToGroup.map(shape => ({ ...shape, x: shape.x - minX, y: shape.y - minY })),
+      layerId: shapesToGroup[0].layerId,
+      pageId: shapesToGroup[0].pageId,
+      fill: 'transparent',
+      stroke: '#000000',
+      strokeWidth: 1,
+      strokeDashArray: [5, 5]
+    };
+    
+    // Remove the original shapes
+    shapes.value = shapes.value.filter(shape => !shapeIds.includes(shape.id));
+    
+    // Add the group shape
+    addShape(groupShape);
+    
+    // Select the new group
+    selectShapes([groupShape.id]);
+    
+    // Add to history
+    addToHistory({
+      type: 'group',
+      shapes: [groupShape],
+      oldShapes: shapesToGroup
+    });
+  }
+  
+  // Ungroup shapes
+  function ungroupShapes(shapeIds) {
+    if (!shapeIds || shapeIds.length === 0) return;
+    
+    // Get the groups to ungroup
+    const groupsToUngroup = shapes.value.filter(shape => 
+      shapeIds.includes(shape.id) && shape.type === 'group'
+    );
+    
+    if (groupsToUngroup.length === 0) return;
+    
+    let newShapes = [];
+    
+    // Process each group
+    groupsToUngroup.forEach(group => {
+      // Extract children and adjust their positions
+      const children = (group.children || []).map(child => ({
+        ...child,
+        x: child.x + group.x,
+        y: child.y + group.y,
+        layerId: group.layerId,
+        pageId: group.pageId
+      }));
+      
+      // Add children to the canvas
+      children.forEach(child => {
+        const addedShape = addShape(child);
+        if (Array.isArray(addedShape)) {
+          newShapes = [...newShapes, ...addedShape];
+        } else {
+          newShapes.push(addedShape);
+        }
+      });
+      
+      // Remove the group
+      shapes.value = shapes.value.filter(shape => shape.id !== group.id);
+    });
+    
+    // Select the new shapes
+    if (newShapes.length > 0) {
+      selectShapes(newShapes.map(shape => shape.id));
+    }
+    
+    // Add to history
+    addToHistory({
+      type: 'ungroup',
+      shapes: newShapes,
+      oldShapes: groupsToUngroup
+    });
   }
 
   function toggleBOMGenerator() {
@@ -1114,6 +1512,22 @@ function setActiveTab(tab) {
     }
     let newShape;
     switch (pendingShapeData.value.type) {
+      case 'excel-table':
+        newShape = {
+          id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'excel-table',
+          x,
+          y,
+          width: pendingShapeData.value.width || 500,
+          height: pendingShapeData.value.height || 300,
+          fill: '#FFFFFF',
+          stroke: '#CCCCCC',
+          strokeWidth: 1,
+          rotation: 0,
+          layerId: activeLayerId.value,
+          excelData: pendingShapeData.value.excelData || null
+        };
+        break;
       case 'rect':
         newShape = {
           id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1215,9 +1629,11 @@ function setActiveTab(tab) {
       newShape.partProperties = { ...partProperties };
     }
     if (newShape) {
-      addShape(newShape);
+      const addedShape = addShape(newShape);
       selectShapes([newShape.id]);
+      return addedShape;
     }
+    return null;
   }
 
   function addLibraryShape(shape) {
@@ -1244,13 +1660,43 @@ function setActiveTab(tab) {
   function openFile() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,.csp';
+    input.accept = '.csp,.json';
     input.onchange = (e) => {
       const file = e.target.files[0];
+      if (!file) return;
+      
+      // Update document name from filename (without extension)
+      const fileName = file.name;
+      const dotIndex = fileName.lastIndexOf('.');
+      if (dotIndex > 0) {
+        documentName.value = fileName.substring(0, dotIndex);
+      }
+      
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const data = JSON.parse(event.target.result);
+          // Parse the file content
+          let data;
+          try {
+            data = JSON.parse(event.target.result);
+          } catch (parseError) {
+            console.error('Error parsing file:', parseError);
+            alert('Error: The file appears to be corrupted or not in the correct format.');
+            return;
+          }
+          
+          // Validate file format
+          if (!data) {
+            alert('Error: The file is empty or invalid.');
+            return;
+          }
+          
+          // Check if this is a CtrlSketch file
+          if (data.fileType === "CtrlSketch") {
+            console.log('Opening CtrlSketch file format version:', data.fileVersion);
+          } else {
+            console.log('Opening legacy or non-CtrlSketch JSON file');
+          }
           
           // First, load the layers to ensure they exist before assigning shapes
           if (data.layers && Array.isArray(data.layers)) {
@@ -1277,22 +1723,37 @@ function setActiveTab(tab) {
           
           // Load shapes and validate layerIds
           if (data.shapes && Array.isArray(data.shapes)) {
-            // Filter out shapes with invalid layerIds
-            shapes.value = data.shapes.filter(shape => {
+            // Filter out shapes with invalid layerIds and fix any issues
+            shapes.value = data.shapes.map(shape => {
+              // Create a clean copy of the shape to avoid reference issues
+              const cleanShape = { ...shape };
+              
               // If shape has no layerId, assign it to the active layer
-              if (!shape.layerId) {
-                shape.layerId = activeLayerId.value;
-                return true;
+              if (!cleanShape.layerId) {
+                cleanShape.layerId = activeLayerId.value;
               }
               
               // Check if the layerId exists in the loaded layers
-              const layerExists = layers.value.some(layer => layer.id === shape.layerId);
+              const layerExists = layers.value.some(layer => layer.id === cleanShape.layerId);
               if (!layerExists) {
-                console.warn(`Shape with id ${shape.id} has invalid layerId ${shape.layerId}. Assigning to active layer.`);
-                shape.layerId = activeLayerId.value;
+                console.warn(`Shape with id ${cleanShape.id} has invalid layerId ${cleanShape.layerId}. Assigning to active layer.`);
+                cleanShape.layerId = activeLayerId.value;
               }
               
-              return true;
+              // Ensure shape has required properties
+              if (cleanShape.type === 'rectangle' || cleanShape.type === 'ellipse') {
+                if (typeof cleanShape.width !== 'number') cleanShape.width = 100;
+                if (typeof cleanShape.height !== 'number') cleanShape.height = 100;
+              }
+              
+              if (typeof cleanShape.x !== 'number') cleanShape.x = 0;
+              if (typeof cleanShape.y !== 'number') cleanShape.y = 0;
+              
+              // Ensure fill and stroke properties
+              if (!cleanShape.fill) cleanShape.fill = '#3B82F6';
+              if (!cleanShape.stroke) cleanShape.stroke = '#000000';
+              
+              return cleanShape;
             });
           } else {
             shapes.value = [];
@@ -1306,6 +1767,15 @@ function setActiveTab(tab) {
             } else if (pages.value.length > 0) {
               activePageId.value = pages.value[0].id;
             }
+          } else {
+            // Create a default page if none exists
+            const defaultPage = { 
+              id: `page-${Date.now()}`, 
+              name: 'Page 1', 
+              shapes: [] 
+            };
+            pages.value = [defaultPage];
+            activePageId.value = defaultPage.id;
           }
           
           // Clear selection
@@ -1318,6 +1788,9 @@ function setActiveTab(tab) {
           // Save to history
           saveToHistory();
           
+          // Mark document as not modified since we just loaded it
+          documentModified.value = false;
+          
           console.log('File loaded successfully:', {
             shapes: shapes.value.length,
             layers: layers.value.length,
@@ -1327,6 +1800,7 @@ function setActiveTab(tab) {
           
         } catch (error) {
           console.error('Error opening file:', error);
+          alert('Error opening file: ' + error.message);
         }
       };
       reader.readAsText(file);
@@ -1337,6 +1811,8 @@ function setActiveTab(tab) {
   function saveFile() {
     // Create a complete data object with all necessary information
     const data = {
+      fileType: "CtrlSketch",
+      fileVersion: "1.0",
       shapes: shapes.value,
       layers: layers.value,
       pages: pages.value,
@@ -1346,14 +1822,39 @@ function setActiveTab(tab) {
       savedAt: new Date().toISOString()
     };
     
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    saveAs(blob, `${documentName.value}.csp`);
-    console.log('File saved successfully:', documentName.value);
+    // Use a try-catch to handle any serialization errors
+    try {
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      saveAs(blob, `${documentName.value}.csp`);
+      console.log('File saved successfully:', documentName.value);
+      documentModified.value = false; // Mark as saved
+    } catch (error) {
+      console.error('Error saving file:', error);
+      alert('Error saving file: ' + error.message);
+    }
   }
 
   function saveFileAs() {
+    // Prompt for filename and extension
+    const defaultExt = '.csp';
+    const filename = prompt('Enter filename (without extension):', documentName.value) || documentName.value;
+    documentName.value = filename; // Update the document name
+    
+    // Ask for file format
+    const formatOptions = ['CtrlSketch (.csp)', 'JSON (.json)'];
+    const formatChoice = prompt(`Choose file format (enter 1 or 2):\n1. ${formatOptions[0]} (default)\n2. ${formatOptions[1]}`, '1');
+    
+    // Determine file extension based on choice
+    let extension = defaultExt;
+    if (formatChoice === '2') {
+      extension = '.json';
+    }
+    
     // Create a complete data object with all necessary information
     const data = {
+      fileType: "CtrlSketch",
+      fileVersion: "1.0",
       shapes: shapes.value,
       layers: layers.value,
       pages: pages.value,
@@ -1363,12 +1864,17 @@ function setActiveTab(tab) {
       savedAt: new Date().toISOString()
     };
     
-    const filename = prompt('Enter filename (without extension):', documentName.value) || documentName.value;
-    documentName.value = filename; // Update the document name
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    saveAs(blob, `${filename}.csp`);
-    console.log('File saved as:', filename);
+    // Use a try-catch to handle any serialization errors
+    try {
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      saveAs(blob, `${filename}${extension}`);
+      console.log('File saved as:', `${filename}${extension}`);
+      documentModified.value = false; // Mark as saved
+    } catch (error) {
+      console.error('Error saving file:', error);
+      alert('Error saving file: ' + error.message);
+    }
   }
 
   function exportAsPDF(canvas) {
@@ -1445,7 +1951,17 @@ function setActiveTab(tab) {
       // Create a file input element to trigger file selection
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = type === 'png' ? '.png' : type === 'svg' ? '.svg' : '.json';
+      
+      // Set the accept attribute based on the file type
+      if (type === 'png') {
+        input.accept = '.png';
+      } else if (type === 'svg') {
+        input.accept = '.svg';
+      } else if (type === 'excel') {
+        input.accept = '.xlsx';
+      } else {
+        input.accept = '.json';
+      }
       
       input.onchange = (event) => {
         const selectedFile = event.target.files[0];
@@ -1561,6 +2077,106 @@ function setActiveTab(tab) {
         } catch (err) {
           console.error('Error in PNG import process:', err);
         }
+      } else if (type === 'excel') {
+        console.log('Starting Excel import process');
+        
+        if (file) {
+          // If a file was provided, read it
+          try {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+              try {
+                // Parse the Excel file
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                // Get the first sheet
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // Convert to JSON
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                
+                // Create a new Excel table shape
+                const excelTableShape = {
+                  id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  type: 'excel-table',
+                  x: 100,
+                  y: 100,
+                  width: 500,
+                  height: 300,
+                  layerId: activeLayerId.value,
+                  selectable: true,
+                  movable: true,
+                  fill: '#FFFFFF',
+                  stroke: '#CCCCCC',
+                  strokeWidth: 1,
+                  excelData: {
+                    workbook: workbook,
+                    sheetNames: workbook.SheetNames,
+                    selectedSheet: firstSheetName,
+                    headers: jsonData[0] || [],
+                    tableData: jsonData.slice(1)
+                  }
+                };
+                
+                // Add the shape to the canvas
+                shapes.value.push(excelTableShape);
+                
+                // Select the new shape
+                selectedShapes.value = [excelTableShape.id];
+                
+                // Create a history entry
+                addToHistory({
+                  type: 'add',
+                  shapes: [excelTableShape]
+                });
+              } catch (error) {
+                console.error('Error parsing Excel file:', error);
+              }
+            };
+            
+            reader.onerror = (error) => {
+              console.error('Error reading Excel file:', error);
+            };
+            
+            // Read the file
+            reader.readAsArrayBuffer(file);
+          } catch (error) {
+            console.error('Error creating Excel table shape:', error);
+          }
+        } else {
+          // If no file was provided, just create an empty Excel table shape
+          const excelTableShape = {
+            id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            type: 'excel-table',
+            x: 100,
+            y: 100,
+            width: 500,
+            height: 300,
+            layerId: activeLayerId.value,
+            selectable: true,
+            movable: true,
+            fill: '#FFFFFF',
+            stroke: '#CCCCCC',
+            strokeWidth: 1,
+            excelData: null // Will be populated by the ExcelTableEmbed component
+          };
+          
+          // Add the shape to the canvas
+          shapes.value.push(excelTableShape);
+          
+          // Select the new shape
+          selectedShapes.value = [excelTableShape.id];
+          
+          // Create a history entry
+          addToHistory({
+            type: 'add',
+            shapes: [excelTableShape]
+          });
+        }
+        
       } else if (type === 'json') {
         console.log('Starting JSON import process');
         const reader = new FileReader();
@@ -1725,6 +2341,9 @@ function setActiveTab(tab) {
     let allShapes = [];
     const idMap = new Map(); // Map to track shapes by ID
     
+    // Get the current active page ID
+    const currentPageId = activePageId.value;
+    
     // Process each layer
     layers.value.forEach((layer) => {
       if (layer.shapes && Array.isArray(layer.shapes)) {
@@ -1744,6 +2363,7 @@ function setActiveTab(tab) {
             ...shape,
             id: shape.id, // Preserve the original ID
             layerId: layer.id, // Ensure layer ID is set
+            pageId: shape.pageId || currentPageId, // Ensure page ID is set
             // Handle coordinates and dimensions with proper null/undefined checks
             x: shape.x !== undefined ? shape.x : 0,
             y: shape.y !== undefined ? shape.y : 0,
@@ -1995,6 +2615,7 @@ function setActiveTab(tab) {
         gridColor: gridColor.value,
         showRulers: showRulers.value,
         snapToGrid: snapToGrid.value,
+        snapToObjects: snapToObjects.value,
       };
       localStorage.setItem(
         localStorageKey.value + (documentName.value || 'untitled').replace(/\s+/g, '_').toLowerCase(),
@@ -2051,6 +2672,7 @@ function setActiveTab(tab) {
       gridColor.value = data.gridColor || '#000000';
       showRulers.value = data.showRulers || false;
       snapToGrid.value = data.snapToGrid || false;
+      snapToObjects.value = data.snapToObjects || false;
       history.value = [JSON.stringify(shapes.value)];
       historyIndex.value = 0;
       saveToHistory();
@@ -2084,6 +2706,74 @@ function setActiveTab(tab) {
       selectShapes(newShapes.map((shape) => shape.id));
     }
   }
+  
+  // Bring selected shapes to front
+  function bringToFront(shapeIds = null) {
+    const ids = shapeIds || selectedShapes.value;
+    if (!ids || ids.length === 0) return;
+    
+    // Get the shapes to bring to front
+    const shapesToMove = shapes.value.filter(shape => ids.includes(shape.id));
+    if (shapesToMove.length === 0) return;
+    
+    // Remove the shapes from their current positions
+    shapes.value = shapes.value.filter(shape => !ids.includes(shape.id));
+    
+    // Add them to the end of the array (top of the stack)
+    shapes.value = [...shapes.value, ...shapesToMove];
+    
+    // Update the shapes in their layers
+    shapesToMove.forEach(shape => {
+      const layerIndex = layers.value.findIndex(layer => layer.id === shape.layerId);
+      if (layerIndex !== -1) {
+        // Remove the shape from its current position in the layer
+        layers.value[layerIndex].shapes = layers.value[layerIndex].shapes.filter(s => s.id !== shape.id);
+        
+        // Add it to the end of the layer's shapes array
+        layers.value[layerIndex].shapes.push(shape);
+      }
+    });
+    
+    // Add to history
+    addToHistory({
+      type: 'reorder',
+      shapes: shapesToMove
+    });
+  }
+  
+  // Send selected shapes to back
+  function sendToBack(shapeIds = null) {
+    const ids = shapeIds || selectedShapes.value;
+    if (!ids || ids.length === 0) return;
+    
+    // Get the shapes to send to back
+    const shapesToMove = shapes.value.filter(shape => ids.includes(shape.id));
+    if (shapesToMove.length === 0) return;
+    
+    // Remove the shapes from their current positions
+    shapes.value = shapes.value.filter(shape => !ids.includes(shape.id));
+    
+    // Add them to the beginning of the array (bottom of the stack)
+    shapes.value = [...shapesToMove, ...shapes.value];
+    
+    // Update the shapes in their layers
+    shapesToMove.forEach(shape => {
+      const layerIndex = layers.value.findIndex(layer => layer.id === shape.layerId);
+      if (layerIndex !== -1) {
+        // Remove the shape from its current position in the layer
+        layers.value[layerIndex].shapes = layers.value[layerIndex].shapes.filter(s => s.id !== shape.id);
+        
+        // Add it to the beginning of the layer's shapes array
+        layers.value[layerIndex].shapes.unshift(shape);
+      }
+    });
+    
+    // Add to history
+    addToHistory({
+      type: 'reorder',
+      shapes: shapesToMove
+    });
+  }
 
   function setActiveTab(tab) {
     activeTab.value = tab;
@@ -2113,9 +2803,11 @@ function setActiveTab(tab) {
     gridColor,
     showRulers,
     snapToGrid,
+    snapToObjects,
     showLayers,
     showShapeLibrary,
     shapeLibraryPosition,
+    shapeLibrarySize,
     isDraggingShapeLibrary,
     dragOffsetShapeLibrary,
     showPageTabs,
@@ -2134,6 +2826,17 @@ function setActiveTab(tab) {
     colorPickerPosition,
     showPartPropertiesDialog,
     partPropertiesData,
+    
+    // Shape properties dialog
+    showShapePropertiesDialog,
+    shapePropertiesData,
+    toggleShapePropertiesDialog,
+    
+    // Alignment dialog
+    showAlignmentDialog,
+    alignmentShapeIds,
+    toggleAlignmentDialog,
+    
     pendingShapeData,
     draggedShapeData,
     showBOMGenerator,
@@ -2155,7 +2858,6 @@ function setActiveTab(tab) {
     licenseNumber,
     clipboard,
     activeTab,
-    isGlossy,
     shapeLibraries,
     libraryShapes,
 
@@ -2171,10 +2873,6 @@ function setActiveTab(tab) {
 
     // Actions
     initializeApp,
-    initializeGlossyPreference,
-    toggleGlossy,
-    applyGlossyEffect,
-    removeGlossyEffect,
     initializeDefaultPage,
     addShape,
     updateShape,
@@ -2206,11 +2904,13 @@ function setActiveTab(tab) {
     updateGridSettings,
     toggleRulers,
     toggleSnapToGrid,
+    toggleSnapToObjects,
     toggleLayersPanel,
     toggleShapeLibrary,
     startDragShapeLibrary,
     dragShapeLibrary,
     endDragShapeLibrary,
+    setShapeLibrarySize,
     togglePageTabs,
     startDragPageTabs,
     dragPageTabs,
@@ -2249,6 +2949,15 @@ function setActiveTab(tab) {
     cutShapes,
     copyShapes,
     pasteShapes,
+    
+    // Group operations
+    groupShapes,
+    ungroupShapes,
+    
+    // Z-order operations
+    bringToFront,
+    sendToBack,
+    
     setActiveTab,
     toggleSplashScreen,
   };

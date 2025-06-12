@@ -11,7 +11,7 @@
 
     <div v-show="!store.showSplashScreen">
       <!-- Menu Bar -->
-      <MenuBar @menu="handleMenuAction" data-glossy-target="menuBar" />
+      <MenuBar @menu="handleMenuAction" />
       <Ribbon
         :active-tab="store.activeTab"
         @ribbon-action="handleRibbonAction"
@@ -21,8 +21,11 @@
         :grid-color="store.gridColor"
         :show-layers="store.showLayers"
         :show-shape-library="store.showShapeLibrary"
-        data-glossy-target="ribbon"
+        :pages="store.pages"
+        :active-page-id="store.activePageId"
       />
+      
+
       
 
 
@@ -30,9 +33,13 @@
         <!-- Shape Library Panel -->
         <div
           v-if="store.showShapeLibrary"
-          class="fixed w-64 bg-gray-800 border border-gray-700 overflow-hidden z-50 shadow-xl rounded-md"
-          style="height: 80vh; max-height: 600px;"
-          :style="{ left: store.shapeLibraryPosition.x + 'px', top: store.shapeLibraryPosition.y + 'px' }"
+          class="fixed bg-gray-800 border border-gray-700 overflow-hidden z-50 shadow-xl rounded-md"
+          :style="{ 
+            left: store.shapeLibraryPosition.x + 'px', 
+            top: store.shapeLibraryPosition.y + 'px',
+            width: store.shapeLibrarySize.width + 'px',
+            height: store.shapeLibrarySize.height + 'px'
+          }"
           ref="shapeLibraryPanel"
         >
           <div
@@ -57,6 +64,8 @@
               @add-shape="store.handleAddShape"
             />
           </div>
+          
+          <!-- Resize handle removed -->
         </div>
 
         <main class="flex-1 relative">
@@ -69,6 +78,7 @@
             :grid-type="store.gridType"
             :grid-color="store.gridColor"
             :snap-to-grid="store.snapToGrid"
+            :snap-to-objects="store.snapToObjects"
             :shapes="store.visibleShapes"
             :selected-shapes="store.selectedShapesObjects"
             :active-layer="store.activeLayer"
@@ -85,7 +95,14 @@
             @undo-requested="store.undo"
             @redo-requested="store.redo"
             @toggle-snap-grid="store.toggleSnapToGrid"
+            @toggle-snap-objects="store.toggleSnapToObjects"
             @make-shape-part="handleMakeShapePart"
+            @group-shapes="handleGroupShapes"
+            @ungroup-shapes="handleUngroupShapes"
+            @align-shapes="handleAlignShapes"
+            @show-properties="handleShowProperties"
+            @bring-to-front="store.bringToFront"
+            @send-to-back="store.sendToBack"
             @tool-change="store.setTool($event)"
             @update:tool="store.setTool($event)"
             @show-notification="showNotification"
@@ -233,6 +250,13 @@
       @confirm="store.applyPartProperties"
       @cancel="store.showPartPropertiesDialog = false"
     />
+    
+    <!-- Parts Plus Browser -->
+    <PartSelector
+      v-if="store.showPartSelector"
+      @close="store.showPartSelector = false"
+      @select="handlePartSelection"
+    />
 
     <!-- BOM Generator -->
     <BOMGenerator
@@ -328,6 +352,7 @@ import Calculator from './components/Calculator.vue';
 import ColorPicker from './components/ColorPicker.vue';
 import ShapeLibrary from './components/ShapeLibrary.vue';
 import PartPropertiesDialog from './components/PartPropertiesDialog.vue';
+import PartSelector from './components/PartSelector.vue';
 import BOMGenerator from './components/BOMGenerator.vue';
 import KeyboardShortcutsPanel from './components/KeyboardShortcutsPanel.vue';
 import DragHelper from './components/DragHelper.vue';
@@ -347,6 +372,7 @@ export default {
     ColorPicker,
     ShapeLibrary,
     PartPropertiesDialog,
+    PartSelector,
     BOMGenerator,
     KeyboardShortcutsPanel,
     DragHelper
@@ -361,7 +387,70 @@ export default {
   setup() {
     const store = useCanvasStore();
     store.initializeApp();
-    return { store };
+    
+    // Make the app instance available globally
+    window.app = { store };
+    
+    // Add flag to prevent recursive updates
+    const isHandlingShapeUpdate = false;
+    
+    // Create a Set to track shapes being processed
+    const shapesBeingProcessed = new Set();
+    
+    // Create an array for the update queue
+    const updateQueue = [];
+    
+    return { 
+      store,
+      isHandlingShapeUpdate,
+      shapesBeingProcessed,
+      updateQueue
+    };
+  },
+  methods: {
+    startResizeShapeLibrary(event) {
+      // Simple direct approach to resizing
+      if (event.button !== undefined && event.button !== 0) return; // Only proceed with left mouse button
+      
+      // Prevent default behavior
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Get initial values
+      const initialX = event.clientX;
+      const initialY = event.clientY;
+      const initialWidth = this.store.shapeLibrarySize.width;
+      const initialHeight = this.store.shapeLibrarySize.height;
+      
+      console.log('Starting resize:', { initialWidth, initialHeight, initialX, initialY });
+      
+      // Create a simple resize function
+      const resize = (e) => {
+        // Calculate new dimensions
+        const newWidth = initialWidth + (e.clientX - initialX);
+        const newHeight = initialHeight + (e.clientY - initialY);
+        
+        // Update the size (with minimum constraints applied in the store)
+        this.store.shapeLibrarySize.width = Math.max(250, newWidth);
+        this.store.shapeLibrarySize.height = Math.max(300, newHeight);
+        
+        console.log('Resized to:', { 
+          width: this.store.shapeLibrarySize.width, 
+          height: this.store.shapeLibrarySize.height 
+        });
+      };
+      
+      // Create a cleanup function
+      const stopResize = () => {
+        window.removeEventListener('mousemove', resize);
+        window.removeEventListener('mouseup', stopResize);
+        console.log('Resize complete');
+      };
+      
+      // Add the event listeners
+      window.addEventListener('mousemove', resize);
+      window.addEventListener('mouseup', stopResize);
+    },
   },
   mounted() {
     window.addEventListener('keydown', this.handleGlobalKeyDown);
@@ -369,6 +458,13 @@ export default {
     
     // Always set the default tool to 'select' when the application starts
     this.store.setTool('select');
+    
+    // Make sure we have default pages
+    this.store.initializeDefaultPage();
+    
+    // Debug: Log pages
+    console.log('Pages in store:', this.store.pages);
+    console.log('Active page ID:', this.store.activePageId);
     
     const savedData = this.store.loadAutoSavedData();
     if (savedData) {
@@ -435,8 +531,22 @@ export default {
 },
     
     handleRibbonAction({ type, value }) {
-      console.log('Ribbon action:', type, value);
+      console.log('Ribbon action received:', type, value);
       switch (type) {
+        case 'page':
+          // Handle page switching
+          console.log('Switching to page:', value);
+          console.log('Current active page:', this.store.activePageId);
+          console.log('Available pages:', this.store.pages);
+          
+          // Force update the active page ID directly
+          this.store.activePageId = value;
+          
+          // Then call the method
+          this.store.setActivePage(value);
+          
+          console.log('New active page after switch:', this.store.activePageId);
+          break;
         case 'tool':
           console.log('Setting tool to:', value);
           this.store.setTool(value);
@@ -459,6 +569,13 @@ export default {
           // The function will handle creating a file input
           this.store.importFile(value);
           break;
+        case 'manage':
+          // Handle page management
+          if (value === 'pages') {
+            console.log('Opening page manager');
+            this.store.showAddPageDialog = true;
+          }
+          break;
         case 'view':
           if (value === 'grid') this.store.toggleGrid();
           else if (value === 'zoomIn') this.zoomCanvas(1.2);
@@ -468,6 +585,7 @@ export default {
           else if (value === 'shapeLibrary') this.store.toggleShapeLibrary();
           else if (value === 'rulers') this.store.toggleRulers();
           else if (value === 'snapToGrid') this.store.toggleSnapToGrid();
+          else if (value === 'snapToObjects') this.store.toggleSnapToObjects();
           else this.store.updateGridSettings(value);
           break;
         case 'history':
@@ -485,6 +603,7 @@ export default {
           else if (value === 'colorPicker') this.store.toggleColorPicker();
           else if (value === 'bomGenerator') this.store.toggleBOMGenerator();
           else if (value === 'makeShapePart') this.handleMakeShapePart(this.store.getSelectedShapes());
+          else if (value === 'partsPlusBrowser') this.togglePartsPlusBrowser();
           break;
         case 'ai':
           console.log('AI shape suggestion');
@@ -609,6 +728,121 @@ export default {
         });
       }
     },
+    
+    handleGroupShapes(shapes) {
+      if (!shapes || shapes.length < 2) {
+        this.showNotification({
+          type: 'warning',
+          message: 'Cannot group shapes',
+          details: 'Please select at least two shapes to group.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      // Call the store method to group shapes
+      this.store.groupShapes(shapes.map(s => s.id));
+      
+      this.showNotification({
+        type: 'success',
+        message: 'Shapes grouped',
+        details: `${shapes.length} shapes have been grouped.`,
+        duration: 3000
+      });
+    },
+    
+    togglePartsPlusBrowser() {
+      this.store.showPartSelector = true;
+    },
+    
+    handlePartSelection(partData) {
+      // Handle the selected part from the Parts Plus browser
+      console.log('Selected part:', partData);
+      
+      // Close the part selector
+      this.store.showPartSelector = false;
+      
+      // You can add additional logic here to use the selected part
+      // For example, add it to the BOM or create a shape for it
+      this.showNotification({
+        type: 'success',
+        message: 'Part selected',
+        details: `${partData.name} has been selected.`,
+        duration: 3000
+      });
+    },
+    
+    handleUngroupShapes(shapes) {
+      if (!shapes || shapes.length === 0) {
+        this.showNotification({
+          type: 'warning',
+          message: 'No shape selected',
+          details: 'Please select a group to ungroup.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      // Call the store method to ungroup shapes
+      this.store.ungroupShapes(shapes.map(s => s.id));
+      
+      this.showNotification({
+        type: 'success',
+        message: 'Group ungrouped',
+        details: 'The group has been ungrouped.',
+        duration: 3000
+      });
+    },
+    
+    handleAlignShapes(shapes) {
+      if (!shapes || shapes.length < 2) {
+        this.showNotification({
+          type: 'warning',
+          message: 'Cannot align shapes',
+          details: 'Please select at least two shapes to align.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      // Show alignment options dialog
+      this.store.toggleAlignmentDialog(shapes.map(s => s.id));
+      
+      this.showNotification({
+        type: 'info',
+        message: 'Alignment options',
+        details: 'Please select alignment options in the dialog.',
+        duration: 3000
+      });
+    },
+    
+    handleShowProperties(shape) {
+      if (!shape) {
+        this.showNotification({
+          type: 'warning',
+          message: 'No shape selected',
+          details: 'Please select a shape to view its properties.',
+          duration: 3000
+        });
+        return;
+      }
+      
+      // If the shape is a part, show part properties dialog
+      if (shape.partProperties) {
+        this.store.togglePartPropertiesDialog(shape.partProperties);
+        return;
+      }
+      
+      // Otherwise show general shape properties dialog
+      this.store.toggleShapePropertiesDialog(shape);
+      
+      this.showNotification({
+        type: 'info',
+        message: 'Shape properties',
+        details: 'You can view and edit the shape properties.',
+        duration: 3000
+      });
+    },
 
     zoomCanvas(factor) {
       if (this.$refs.canvas) {
@@ -684,22 +918,43 @@ handleShapeAdded(newShape) {
     console.log('Store shapes after add:', this.store.shapes.length);
   }
 },    
-    handleShapeUpdated(shapes) {
-      console.log('Shape updated event received with', shapes.length, 'shapes');
-      
-      // The CanvasWorkspace component emits an array of all shapes, with updated shapes
-      if (Array.isArray(shapes)) {
-        // Find the shapes that were updated (those in the selectedShapes array)
-        const selectedIds = this.store.selectedShapes;
-        console.log('Selected shape IDs:', selectedIds);
+    // Handle shape updates with improved recursion prevention
+    
+    // Process the update queue
+    processUpdateQueue() {
+      try {
+        if (this.updateQueue.length === 0) {
+          return;
+        }
         
-        const updatedShapes = shapes.filter(shape => selectedIds.includes(shape.id));
-        console.log('Found', updatedShapes.length, 'shapes to update');
+        console.log(`Processing update queue with ${this.updateQueue.length} shapes`);
         
-        // Update each shape in the store
-        updatedShapes.forEach(shape => {
+        // Get unique shape IDs to avoid processing the same shape multiple times
+        const uniqueShapeIds = new Set();
+        const uniqueShapes = [];
+        
+        // For each shape in the queue, only keep the latest update
+        for (let i = this.updateQueue.length - 1; i >= 0; i--) {
+          const shape = this.updateQueue[i];
+          if (shape && shape.id && !uniqueShapeIds.has(shape.id)) {
+            uniqueShapeIds.add(shape.id);
+            uniqueShapes.push(shape);
+          }
+        }
+        
+        console.log(`Processing ${uniqueShapes.length} unique shapes after deduplication`);
+        
+        // Process shapes one by one with a small delay between each
+        const processNextShape = (index) => {
+          if (index >= uniqueShapes.length) {
+            // All shapes processed
+            this.updateQueue.length = 0; // Clear the queue
+            return;
+          }
+          
+          const shape = uniqueShapes[index];
           if (shape && shape.id) {
-            console.log('Updating shape in store:', shape.id, 'position:', shape.x, shape.y);
+            console.log('Updating shape in store:', shape.id);
             
             // Ensure the shape has valid fill and stroke values
             if (!shape.fill || shape.fill === '') {
@@ -710,9 +965,124 @@ handleShapeAdded(newShape) {
               shape.stroke = '#000000'; // Default black
             }
             
+            // Update the shape in the store
             this.store.updateShape(shape);
+            
+            // Remove from processing set
+            this.shapesBeingProcessed.delete(shape.id);
           }
+          
+          // Process next shape after a small delay
+          setTimeout(() => {
+            processNextShape(index + 1);
+          }, 10);
+        };
+        
+        // Start processing shapes
+        processNextShape(0);
+      } catch (error) {
+        console.error('Error in processUpdateQueue:', error);
+        this.updateQueue.length = 0; // Clear the queue on error
+      } finally {
+        // Clear the flag after a short delay
+        setTimeout(() => {
+          this.isHandlingShapeUpdate = false;
+        }, 50);
+      }
+    },
+    
+    handleShapeUpdated(shapes) {
+      try {
+        // The CanvasWorkspace component emits an array of all shapes, with updated shapes
+        if (!Array.isArray(shapes) || shapes.length === 0) {
+          return;
+        }
+        
+        // Detect if this is a drag operation (typically has fewer shapes and happens frequently)
+        const isDragOperation = shapes.length <= 5;
+        
+        // For drag operations, use a more lightweight approach without recursion checks
+        if (isDragOperation) {
+          // Find the shapes that were updated (those in the selectedShapes array)
+          const selectedIds = this.store.selectedShapes;
+          
+          // Filter shapes that need updating
+          const shapesToUpdate = shapes.filter(shape => {
+            return shape && shape.id && selectedIds.includes(shape.id);
+          });
+          
+          if (shapesToUpdate.length === 0) {
+            return;
+          }
+          
+          // For drag operations, update shapes directly without additional checks
+          // This avoids the recursion issue during drag
+          shapesToUpdate.forEach(shape => {
+            // Create a clean copy of the shape to avoid reactivity issues
+            const shapeCopy = JSON.parse(JSON.stringify(shape));
+            
+            // Update the shape in the store directly
+            // Use a special flag to indicate this is a drag update
+            shapeCopy._isDragUpdate = true;
+            this.store.updateShape(shapeCopy);
+          });
+          
+          return;
+        }
+        
+        // For non-drag operations, use the full update process with recursion checks
+        
+        // Check if we're already handling an update
+        if (this.isHandlingShapeUpdate) {
+          console.warn('Already handling shape update, skipping to prevent recursion');
+          return;
+        }
+        
+        console.log('Shape updated event received with', shapes.length, 'shapes');
+        
+        // Set the flag to prevent recursive updates
+        this.isHandlingShapeUpdate = true;
+        
+        // Find the shapes that were updated (those in the selectedShapes array)
+        const selectedIds = this.store.selectedShapes;
+        
+        // Filter shapes that need updating
+        const shapesToUpdate = shapes.filter(shape => {
+          return shape && shape.id && 
+                 selectedIds.includes(shape.id) && 
+                 !this.shapesBeingProcessed.has(shape.id);
         });
+        
+        if (shapesToUpdate.length === 0) {
+          console.log('No shapes to update after filtering');
+          this.isHandlingShapeUpdate = false;
+          return;
+        }
+        
+        console.log('Found', shapesToUpdate.length, 'shapes to update');
+        
+        // Process each shape individually to avoid batch issues
+        shapesToUpdate.forEach(shape => {
+          // Mark this shape as being processed
+          this.shapesBeingProcessed.add(shape.id);
+          
+          // Update the shape in the store directly
+          this.store.updateShape(shape);
+          
+          // Remove from processing after a short delay
+          setTimeout(() => {
+            this.shapesBeingProcessed.delete(shape.id);
+          }, 50);
+        });
+      } catch (error) {
+        console.error('Error in handleShapeUpdated:', error);
+      } finally {
+        // Clear the flag after a short delay to allow for any pending updates
+        if (this.isHandlingShapeUpdate) {
+          setTimeout(() => {
+            this.isHandlingShapeUpdate = false;
+          }, 50);
+        }
       }
     },
     
@@ -761,4 +1131,6 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-500;
 }
+
+/* Custom styles for the app */
 </style>
