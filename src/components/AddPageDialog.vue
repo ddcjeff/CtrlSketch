@@ -1,10 +1,10 @@
 <!-- src/components/AddPageDialog.vue -->
 <template>
-  <div v-if="show" class="add-page-dialog-overlay" @click.self="$emit('close')">
+  <div v-if="show" class="add-page-dialog-overlay" @click.self="closeDialog">
     <div class="add-page-dialog" :class="{ 'dark-theme': isDarkTheme }">
       <div class="dialog-header">
         <h3>Add New Page</h3>
-        <button class="close-button" @click="$emit('close')">×</button>
+        <button class="close-button" @click="closeDialog">×</button>
       </div>
       <div class="dialog-content">
         <div class="form-group">
@@ -67,7 +67,7 @@
         </div>
       </div>
       <div class="dialog-footer">
-        <button class="cancel-button" @click="$emit('close')">Cancel</button>
+        <button class="cancel-button" @click="closeDialog">Cancel</button>
         <button class="ok-button" @click="addPage">OK</button>
       </div>
     </div>
@@ -106,13 +106,34 @@ export default {
     }
   },
   methods: {
+    closeDialog() {
+      // Explicitly emit the close event
+      this.$emit('close');
+    },
+    
     addPage() {
       if (!this.pageData.name.trim()) {
         alert('Page name cannot be empty');
         return;
       }
-      this.$emit('add', { ...this.pageData });
-      this.$emit('close');
+      
+      // Create a deep copy of the page data to avoid reference issues
+      const pageDataCopy = JSON.parse(JSON.stringify(this.pageData));
+      
+      // Emit the add event with the page data
+      this.$emit('add', pageDataCopy);
+      
+      // Reset the form for the next page (don't close the dialog)
+      this.pageData = { 
+        name: '', 
+        type: 'foreground',
+        backgroundPageId: '',
+        description: '',
+        drawingType: 'default'
+      };
+      
+      // Only close if explicitly requested
+      // this.$emit('close');
     }
   }
 };

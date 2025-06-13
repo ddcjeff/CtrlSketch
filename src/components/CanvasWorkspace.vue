@@ -53,24 +53,8 @@
         <strong>Snap to Objects:</strong> {{ snapToObjects ? 'ON' : 'OFF' }}
       </div>
       
-      <!-- Auto-save status -->
-      <div v-if="autoSaveStatus" class="status-item auto-save-status" :class="{
-        'status-saving': autoSaveStatus === 'saving',
-        'status-saved': autoSaveStatus === 'saved',
-        'status-error': autoSaveStatus === 'error'
-      }">
-        <svg v-if="autoSaveStatus === 'saving'" class="animate-spin -ml-1 mr-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <svg v-else-if="autoSaveStatus === 'saved'" class="mr-1 h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-        </svg>
-        <svg v-else-if="autoSaveStatus === 'error'" class="mr-1 h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-        <span>{{ autoSaveMessage }}</span>
-      </div>
+      <!-- Auto-save status completely disabled -->
+      <!-- No auto-save messages will be shown -->
       
       <div class="flex-grow"></div>
       <button 
@@ -217,6 +201,15 @@ export default {
     };
   },
   watch: {
+    shapes: {
+      immediate: true,
+      handler(newVal) {
+        console.log('shapes prop changed:', newVal ? newVal.length : 0);
+        // Trigger a render when shapes change
+        this.staticCanvasDirty = true;
+        this.render();
+      }
+    },
     selectedShapes: {
       immediate: true,
       handler(newVal) {
@@ -425,9 +418,15 @@ export default {
       setTimeout(() => {
         this.centerCanvas('reset');
         
-        // Ensure we start in select mode
-        console.log('Canvas mounted, ensuring select mode is active');
-        this.forceSelectMode();
+        // Only force select mode if no tool is selected
+        if (!this.tool || this.tool === '') {
+          console.log('Canvas mounted, no tool selected, setting select mode');
+          this.forceSelectMode(true);
+        } else {
+          console.log('Canvas mounted, keeping current tool:', this.tool);
+          // Make sure isDrawingTool is set correctly
+          this.isDrawingTool = !['select', 'hand', ''].includes(this.tool);
+        }
       }, 100);
       
       window.addEventListener("resize", this.centerCanvas);
@@ -1484,25 +1483,31 @@ export default {
               console.log('Shape removed from selection:', shape.type);
               this.localSelectedShapes.splice(shapeIndex, 1);
             } else {
-              this.localSelectedShapes.push(shape);
-              console.log('Shape added to selection:', shape.type);
+              // Create a clean copy of the shape to avoid reference issues
+              const shapeCopy = { ...shape };
+              this.localSelectedShapes.push(shapeCopy);
+              console.log('Shape added to selection:', shapeCopy.type);
             }
           } else {
-            this.localSelectedShapes = [shape];
-            console.log('Shape selected:', shape.type);
+            // Create a clean copy of the shape to avoid reference issues
+            const shapeCopy = { ...shape };
+            this.localSelectedShapes = [shapeCopy];
+            console.log('Shape selected:', shapeCopy.type);
           }
+          
           // Create a deep clone to prevent reactivity issues
           const selectedShapesClone = JSON.parse(JSON.stringify(this.localSelectedShapes));
           this.$emit('shapes-selected', selectedShapesClone);
+          
           // Only set isDragging if the shape is movable
           if (this.localSelectedShapes.some(s => s.id === shape.id)) {
-          console.log('Enabling drag mode:', shape.id);
-           this.isDragging = true;
-          const snappedPoint = this.snapCoordinate(x, y, false);
-           this.startX = snappedPoint.x;
-           this.startY = snappedPoint.y;
-          console.log('Setting drag start point:', this.startX, this.startY);
-}
+            console.log('Enabling drag mode:', shape.id);
+            this.isDragging = true;
+            const snappedPoint = this.snapCoordinate(x, y, false);
+            this.startX = snappedPoint.x;
+            this.startY = snappedPoint.y;
+            console.log('Setting drag start point:', this.startX, this.startY);
+          }
           this.render();
         }
         return;
@@ -1742,20 +1747,33 @@ export default {
           
           console.log('Emitting shape-updated event during drag with', updatedShapes.length, 'shapes');
           
+          // Only send the shapes that were actually moved to prevent duplication
+          const movedShapeIds = this.localSelectedShapes.map(s => s.id);
+          
+          // Filter out only the shapes that were moved
+          const shapesToUpdate = updatedShapes.filter(shape => 
+            movedShapeIds.includes(shape.id)
+          );
+          
           // Mark these shapes as drag updates to optimize processing
-          const dragShapes = updatedShapes.map(shape => ({
+          const dragShapes = shapesToUpdate.map(shape => ({
             ...shape,
+            _isDragUpdate: true, // Add a flag to indicate this is a drag update (matches App.vue flag)
             _isDragOperation: true // Add a flag to indicate this is a drag operation
           }));
           
-          // Use a debounced emit for drag operations to reduce update frequency
-          if (!this._debouncedEmitUpdate) {
-            this._debouncedEmitUpdate = this.debounce((shapes) => {
+          // Use a throttled emit for drag operations to reduce update frequency
+          // This is more reliable than debouncing for drag operations
+          if (!this._throttledEmitUpdate) {
+            this._throttledEmitUpdate = this.throttle((shapes) => {
               this.$emit('shape-updated', shapes);
-            }, 16); // ~60fps
+            }, 32); // ~30fps, more stable than 60fps
           }
           
-          this._debouncedEmitUpdate(dragShapes);
+          // Only emit if we have shapes to update
+          if (dragShapes.length > 0) {
+            this._throttledEmitUpdate(dragShapes);
+          }
         }
       } else if (this.isResizing && this.localSelectedShapes.length > 0 && this.resizeHandle && !this.activeLayer.frozen) {
         const shape = this.localSelectedShapes[0];
@@ -1919,12 +1937,19 @@ export default {
           }
           
           const newShape = { ...this.currentShape };
-          const updatedShapes = [...this.shapes, newShape];
-          this.$emit('shape-added', updatedShapes);
+          // Emit only the new shape
+          this.$emit('shape-added', newShape);
           
-          // Always switch back to select mode after drawing a shape
-          console.log('Drawing complete, switching back to select mode');
-          this.forceSelectMode();
+          // Only switch back to select mode if keepToolActive is false
+          console.log('Drawing complete, keepToolActive:', this.$root.$data.keepToolActive);
+          if (!this.$root.$data.keepToolActive) {
+            console.log('Switching back to select mode');
+            this.forceSelectMode();
+          } else {
+            console.log('Keeping current tool active:', this.tool);
+            // Make sure isDrawingTool is set correctly
+            this.isDrawingTool = !['select', 'hand', ''].includes(this.tool);
+          }
         }
         this.currentShape = null;
         this.isDrawing = false;
@@ -1932,32 +1957,44 @@ export default {
         console.log('Ending drag operation');
         this.isDragging = false;
         
-        // Create a deep copy of the shapes to avoid reference issues
-        const updatedShapes = this.shapes.map(s => {
+        // Get the active page ID
+        const activePageId = this.activeLayer ? this.activeLayer.pageId : null;
+        
+        // Only process shapes that were actually moved
+        const movedShapeIds = this.localSelectedShapes.map(s => s.id);
+        
+        // Create a deep copy of only the moved shapes to avoid reference issues
+        const shapesToUpdate = [];
+        
+        this.shapes.forEach(s => {
+          // Skip shapes from different pages or shapes that weren't moved
+          if ((activePageId && s.pageId && s.pageId !== activePageId) || !movedShapeIds.includes(s.id)) {
+            return; // Skip this shape
+          }
+          
           const movedShape = this.localSelectedShapes.find(ls => ls.id === s.id);
           if (movedShape) {
-            console.log('Emitting updated shape:', movedShape.id, 'new position:', movedShape.x, movedShape.y);
+            console.log('Finalizing moved shape:', movedShape.id, 'new position:', movedShape.x, movedShape.y);
             
-            // Create a new object with all properties from both objects
+            // Create a minimal update object with only the necessary properties
             const updatedShape = { 
               ...s, 
-              ...movedShape,
-              // Explicitly set these properties to ensure they're correct
+              // Only copy position properties to avoid duplication issues
               x: movedShape.x,
               y: movedShape.y,
-              movable: movedShape.movable !== false, // Ensure movable is true unless explicitly set to false
-              fill: (movedShape.fill && movedShape.fill !== '') ? movedShape.fill : '#3B82F6', // Ensure fill is valid
-              stroke: (movedShape.stroke && movedShape.stroke !== '') ? movedShape.stroke : '#000000' // Ensure stroke is valid
+              // Add a flag to indicate this is a final update after drag
+              _isFinalDragUpdate: true
             };
             
-            console.log('Updated shape details:', updatedShape);
-            return updatedShape;
+            shapesToUpdate.push(updatedShape);
           }
-          return s;
         });
         
-        console.log('Emitting shape-updated event with', updatedShapes.length, 'shapes');
-        this.$emit('shape-updated', updatedShapes);
+        // Only emit if we have shapes to update
+        if (shapesToUpdate.length > 0) {
+          console.log('Emitting final shape-updated event with', shapesToUpdate.length, 'shapes');
+          this.$emit('shape-updated', shapesToUpdate);
+        }
       } else if (this.isResizing) {
         this.isResizing = false;
         this.resizeHandle = null;
@@ -2068,6 +2105,29 @@ export default {
           return;
         }
         
+        // Skip shapes from foreground pages (they should not be selectable)
+        if (shape.pageId && this.visibleLayers.some(layer => 
+            layer.pageId === shape.pageId && layer.type === 'foreground')) {
+          console.log('Cannot select shape from foreground page:', shape.id);
+          return;
+        }
+        
+        // Skip shapes from background pages when on a foreground page
+        if (shape.pageId && activePageId && shape.pageId !== activePageId) {
+          // Get the current page from visible layers
+          const currentPage = this.visibleLayers.find(layer => layer.pageId === activePageId);
+          const shapePage = this.visibleLayers.find(layer => layer.pageId === shape.pageId);
+          
+          // If current page is foreground and shape is on a background page, skip it
+          if (currentPage && shapePage && 
+              currentPage.type === 'foreground' && 
+              shapePage.type === 'background') {
+            console.log('Cannot select background shape from foreground page:', 
+              shape.id, shape.type, 'page:', shape.pageId);
+            return;
+          }
+        }
+        
         const shapeLayer = this.visibleLayers.find(layer => layer.id === shape.layerId);
         if (shapeLayer && !shapeLayer.frozen) {
           console.log('Shape layer:', shape.layerId, 'Frozen:', shapeLayer?.frozen);
@@ -2140,12 +2200,19 @@ export default {
             layerId: this._flexlineData.layerId
           };
           
-          const updatedShapes = [...this.shapes, newShape];
-          this.$emit('shape-added', updatedShapes);
+          // Emit only the new shape
+          this.$emit('shape-added', newShape);
           
-          // Switch back to select mode
-          console.log('Flex line complete, switching back to select mode');
-          this.forceSelectMode();
+          // Only switch back to select mode if keepToolActive is false
+          console.log('Flex line complete, keepToolActive:', this.$root.$data.keepToolActive);
+          if (!this.$root.$data.keepToolActive) {
+            console.log('Switching back to select mode');
+            this.forceSelectMode();
+          } else {
+            console.log('Keeping current tool active:', this.tool);
+            // Make sure isDrawingTool is set correctly
+            this.isDrawingTool = !['select', 'hand', ''].includes(this.tool);
+          }
           
           // Reset drawing state
           this.currentShape = null;
@@ -2303,13 +2370,23 @@ export default {
           isRotating: this.isRotating,
           hasSelectionStart: !!this.selectionStart,
           selectedShapesCount: this.localSelectedShapes.length,
-          currentTool: this.tool
+          currentTool: this.tool,
+          keepToolActive: this.$root.$data.keepToolActive,
+          isDrawingTool: this.isDrawingTool
         });
         let actionTaken = false;
         
-        // Only emit events - don't try to modify the prop directly
-        this.$emit('update:tool', 'select');
-        this.$emit('tool-change', 'select');
+        // If we're in a drawing tool and keepToolActive is true, disable it and switch to select mode
+        if (this.isDrawingTool && this.$root.$data.keepToolActive) {
+          this.$root.$data.keepToolActive = false;
+          console.log('Disabled keep tool active mode');
+          // Force select mode (with force=true to override keepToolActive)
+          this.forceSelectMode(true);
+          return;
+        }
+        
+        // Handle other escape actions (selection, dragging, etc.)
+        this.forceSelectMode(true);
         
         // Directly manipulate the canvas element's class
         const canvas = this.$refs.canvas;
@@ -2433,6 +2510,19 @@ export default {
       };
     },
     
+    // Utility function to throttle frequent events (better for drag operations)
+    throttle(func, limit) {
+      let inThrottle;
+      return function(...args) {
+        const context = this;
+        if (!inThrottle) {
+          func.apply(context, args);
+          inThrottle = true;
+          setTimeout(() => inThrottle = false, limit);
+        }
+      };
+    },
+    
     // Select a shape
     selectShape(shape) {
       console.log('Selecting shape:', shape.id, shape.type, 
@@ -2450,6 +2540,22 @@ export default {
           layer.pageId === shape.pageId && layer.type === 'foreground')) {
         console.log('Cannot select shape from foreground page:', shape.id);
         return;
+      }
+      
+      // Skip shapes from background pages when on a foreground page
+      if (shape.pageId && activePageId && shape.pageId !== activePageId) {
+        // Get the current page from visible layers
+        const currentPage = this.visibleLayers.find(layer => layer.pageId === activePageId);
+        const shapePage = this.visibleLayers.find(layer => layer.pageId === shape.pageId);
+        
+        // If current page is foreground and shape is on a background page, skip it
+        if (currentPage && shapePage && 
+            currentPage.type === 'foreground' && 
+            shapePage.type === 'background') {
+          console.log('Cannot select background shape from foreground page:', 
+            shape.id, shape.type, 'page:', shape.pageId);
+          return;
+        }
       }
       
       this.localSelectedShapes = [shape];
@@ -2494,6 +2600,23 @@ export default {
             layer.pageId === shape.pageId && layer.type === 'foreground')) {
           console.log('Skipping shape from foreground page:', shape.id, shape.type, 'page:', shape.pageId);
           continue;
+        }
+        
+        // Skip shapes from background pages when on a foreground page
+        // This is the key fix to prevent selecting background shapes from foreground pages
+        if (shape.pageId && activePageId && shape.pageId !== activePageId) {
+          // Get the current page from visible layers
+          const currentPage = this.visibleLayers.find(layer => layer.pageId === activePageId);
+          const shapePage = this.visibleLayers.find(layer => layer.pageId === shape.pageId);
+          
+          // If current page is foreground and shape is on a background page, skip it
+          if (currentPage && shapePage && 
+              currentPage.type === 'foreground' && 
+              shapePage.type === 'background') {
+            console.log('Skipping background shape from foreground page:', 
+              shape.id, shape.type, 'page:', shape.pageId);
+            continue;
+          }
         }
         
         const buffer = 20 / this.zoom;
@@ -2789,8 +2912,16 @@ export default {
     /**
      * Force the tool to select mode
      * This is a utility method to ensure the tool is properly reset
+     * 
+     * @param {boolean} [force=false] - If true, force select mode regardless of user preferences
      */
-    forceSelectMode() {
+    forceSelectMode(force = false) {
+      // Check if we should keep the current tool active (unless forced)
+      if (!force && this.$root.$data.keepToolActive && this.isDrawingTool) {
+        console.log('Keeping current drawing tool active:', this.tool);
+        return;
+      }
+      
       console.log('Forcing select mode');
       
       // Only emit events - don't try to modify the prop directly
@@ -3970,8 +4101,36 @@ export default {
                   ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
                 }
                 
+                // Save context state before drawing the image
+                ctx.save();
+                
+                // Apply proper transformation for the image
+                // This ensures the image is rendered correctly at any zoom level
+                if (shape.rotation) {
+                  // For rotated images, we need to rotate around the center
+                  const centerX = shape.x + shape.width / 2;
+                  const centerY = shape.y + shape.height / 2;
+                  ctx.translate(centerX, centerY);
+                  ctx.rotate(shape.rotation * Math.PI / 180);
+                  ctx.translate(-centerX, -centerY);
+                }
+                
+                // Draw the image with integer coordinates to avoid blurring
+                const x = Math.round(shape.x);
+                const y = Math.round(shape.y);
+                const width = Math.round(shape.width);
+                const height = Math.round(shape.height);
+                
+                // Use higher quality image rendering
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
                 // Draw the image
-                ctx.drawImage(shape.image, shape.x, shape.y, shape.width, shape.height);
+                ctx.drawImage(shape.image, x, y, width, height);
+                
+                // Restore context state
+                ctx.restore();
+                
                 console.log('PNG image drawn successfully:', shape.id);
               } catch (error) {
                 console.error('Failed to draw PNG image:', error, shape);
@@ -4902,7 +5061,21 @@ export default {
         } else if (shape.type === 'image') {
           // Check if image is a valid HTMLImageElement and is loaded
           if (shape.image instanceof HTMLImageElement && shape.image.complete) {
-            cacheCtx.drawImage(shape.image, 0, 0, shape.width, shape.height);
+            // Use higher quality image rendering for the cache
+            cacheCtx.imageSmoothingEnabled = true;
+            cacheCtx.imageSmoothingQuality = 'high';
+            
+            // Draw with integer coordinates to avoid blurring
+            const width = Math.round(shape.width);
+            const height = Math.round(shape.height);
+            
+            // Draw the image at the correct size
+            cacheCtx.drawImage(shape.image, 0, 0, width, height);
+            
+            // Add a small border to help with selection
+            cacheCtx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+            cacheCtx.lineWidth = 1;
+            cacheCtx.strokeRect(0, 0, width, height);
           } else if (shape.src) {
             // If we have a src but no valid image, create a placeholder
             cacheCtx.fillStyle = '#f0f0f0';
@@ -5038,6 +5211,22 @@ export default {
             layer.pageId === shape.pageId && layer.type === 'foreground')) {
           console.log('Cannot select shape from foreground page in context menu:', shape.id);
         } 
+        // Skip shapes from background pages when on a foreground page
+        else if (shape && shape.pageId && activePageId && shape.pageId !== activePageId) {
+          // Get the current page from visible layers
+          const currentPage = this.visibleLayers.find(layer => layer.pageId === activePageId);
+          const shapePage = this.visibleLayers.find(layer => layer.pageId === shape.pageId);
+          
+          // If current page is foreground and shape is on a background page, skip it
+          if (currentPage && shapePage && 
+              currentPage.type === 'foreground' && 
+              shapePage.type === 'background') {
+            console.log('Cannot select background shape from foreground page in context menu:', 
+              shape.id, shape.type, 'page:', shape.pageId);
+          } else if (shape) {
+            this.selectShape(shape);
+          }
+        }
         else if (shape) {
           this.selectShape(shape);
         }

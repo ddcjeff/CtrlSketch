@@ -324,19 +324,62 @@ export default {
     },
     
     selectPart(part) {
-      // Convert part data to the format expected by the part properties dialog
-      const partProperties = {
-        name: part.Description,
-        partNumber: part.PartNumber,
-        manufacturer: part.Manufacturer,
-        quantity: 1,
-        description: `${part.Class} - ${part.SubClass}`,
-        pointType: '',
-        haystackTag: `{id:${part.ItemNumber}, ${part.Class.toLowerCase()}:true}`,
-        pdfPath: part.ProductCut || ''
-      };
+      console.log('Selected part from grid:', part);
       
-      this.$emit('select', partProperties);
+      try {
+        // First, create a direct copy of the original part data
+        const originalPart = JSON.parse(JSON.stringify(part));
+        
+        // Then, create a formatted version with the expected property names
+        const partProperties = {
+          // Use both camelCase and PascalCase properties to ensure compatibility
+          name: part.Description || 'Unnamed Part',
+          Description: part.Description || 'Unnamed Part',
+          
+          partNumber: part.PartNumber || '',
+          PartNumber: part.PartNumber || '',
+          
+          manufacturer: part.Manufacturer || '',
+          Manufacturer: part.Manufacturer || '',
+          
+          quantity: 1,
+          
+          description: `${part.Class || ''} - ${part.SubClass || ''}`,
+          
+          pointType: '',
+          
+          haystackTag: part.HaystackTag || `{id:${part.ItemNumber || 'unknown'}, ${(part.Class || 'part').toLowerCase()}:true}`,
+          HaystackTag: part.HaystackTag || `{id:${part.ItemNumber || 'unknown'}, ${(part.Class || 'part').toLowerCase()}:true}`,
+          
+          pdfPath: part.ProductCut || '',
+          ProductCut: part.ProductCut || '',
+          
+          // Include original properties
+          ItemNumber: part.ItemNumber || '',
+          Class: part.Class || '',
+          SubClass: part.SubClass || '',
+          Supplier: part.Supplier || ''
+        };
+        
+        console.log('Emitting part properties:', partProperties);
+        
+        // Emit both the formatted properties and the original part data
+        this.$emit('select', {
+          ...partProperties,
+          _originalPart: originalPart
+        });
+      } catch (error) {
+        console.error('Error in selectPart:', error);
+        // Emit a basic part object if there's an error
+        this.$emit('select', {
+          name: part.Description || 'Unnamed Part',
+          partNumber: part.PartNumber || '',
+          manufacturer: part.Manufacturer || '',
+          quantity: 1,
+          haystackTag: part.HaystackTag || `{id:${part.ItemNumber || 'unknown'}, ${(part.Class || 'part').toLowerCase()}:true}`,
+          pdfPath: part.ProductCut || ''
+        });
+      }
     },
     
     viewDetails(part) {

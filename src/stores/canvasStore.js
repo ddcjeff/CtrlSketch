@@ -70,6 +70,13 @@ export const useCanvasStore = defineStore('canvas', () => {
   const showRenameDialog = ref(false); // Toggle rename dialog
   const renameData = ref({ id: '', name: '' }); // Rename dialog data
   const showAddPageDialog = ref(false); // Toggle add page dialog
+  const pageDialogInitialData = ref({
+    name: '',
+    type: 'foreground',
+    backgroundPageId: '',
+    description: '',
+    drawingType: 'default'
+  }); // Initial data for the add page dialog
   const showPageManagerDialog = ref(false); // Toggle page manager dialog
   const showCalculator = ref(false); // Toggle calculator
   const calculatorPosition = ref({ x: 400, y: 200 }); // Calculator position
@@ -90,6 +97,7 @@ export const useCanvasStore = defineStore('canvas', () => {
   const showBOMGenerator = ref(false); // Toggle BOM generator
   const bomGeneratorPosition = ref({ x: 200, y: 100 }); // BOM generator position
   const showKeyboardShortcuts = ref(false); // Toggle keyboard shortcuts panel
+  const showPartSelector = ref(false); // Toggle part selector panel
   const history = ref([]); // Array of history states
   const historyIndex = ref(-1); // Current position in history
   const autoSaveEnabled = ref(true); // Auto-save toggle
@@ -163,48 +171,67 @@ export const useCanvasStore = defineStore('canvas', () => {
     console.log('Computing visible shapes non-reactively');
     _lastComputationTime = now;
     
-    // Get current page ID without using .value to avoid reactivity
-    const currentPageId = activePageId.value;
-    const currentShapes = [...shapes.value]; // Create a copy to avoid reactivity
-    const currentLayers = [...layers.value]; // Create a copy to avoid reactivity
-    
-    // Get visible layer IDs
-    const visibleLayerIds = currentLayers
-      .filter(layer => layer.visible)
-      .map(layer => layer.id);
-    
-    // Get current page and background page
-    const currentPage = pages.value.find(p => p.id === currentPageId);
-    const backgroundPageId = currentPage?.backgroundPageId || '';
-    
-    // Filter shapes for visibility and current page
-    const result = currentShapes
-      .filter(shape => {
-        // Check if shape belongs to the current page or its background page
-        const isCurrentPage = !shape.pageId || 
-                             shape.pageId === currentPageId || 
-                             (backgroundPageId && shape.pageId === backgroundPageId);
-        
-        // Check if shape's layer is visible
-        const isVisible = visibleLayerIds.includes(shape.layerId);
-        
-        return isCurrentPage && isVisible;
-      })
-      .map(shape => {
-        // Create a new object to avoid modifying the original
-        const shapeCopy = { ...shape };
-        const layer = currentLayers.find(l => l.id === shapeCopy.layerId);
-        if (layer && layer.opacity < 100) {
-          shapeCopy._layerOpacity = layer.opacity / 100;
-        }
-        return shapeCopy;
-      });
-    
-    // Update cache
-    _cachedVisibleShapes = result;
-    _isCacheValid = true;
-    
-    return result;
+    try {
+      // Get current page ID without using .value to avoid reactivity
+      const currentPageId = activePageId.value;
+      const currentShapes = [...shapes.value]; // Create a copy to avoid reactivity
+      const currentLayers = [...layers.value]; // Create a copy to avoid reactivity
+      
+      // Get visible layer IDs
+      const visibleLayerIds = currentLayers
+        .filter(layer => layer.visible)
+        .map(layer => layer.id);
+      
+      // Get current page and background page
+      const currentPage = pages.value.find(p => p.id === currentPageId);
+      const backgroundPageId = currentPage?.backgroundPageId || '';
+      
+      // Filter shapes for visibility and current page
+      const result = currentShapes
+        .filter(shape => {
+          // Check if shape belongs to the current page or its background page
+          const isCurrentPage = !shape.pageId || 
+                               shape.pageId === currentPageId || 
+                               (backgroundPageId && shape.pageId === backgroundPageId);
+          
+          // Check if shape's layer is visible
+          const isVisible = visibleLayerIds.includes(shape.layerId);
+          
+          return isCurrentPage && isVisible;
+        })
+        .map(shape => {
+          // Create a new object to avoid modifying the original
+          const shapeCopy = { ...shape };
+          
+          // Ensure the shape has all required properties for selection and movement
+          if (shapeCopy.selectable === undefined) shapeCopy.selectable = true;
+          if (shapeCopy.movable === undefined) shapeCopy.movable = true;
+          
+          // Add layer opacity if needed
+          const layer = currentLayers.find(l => l.id === shapeCopy.layerId);
+          if (layer && layer.opacity < 100) {
+            shapeCopy._layerOpacity = layer.opacity / 100;
+          }
+          
+          // Ensure the shape has a pageId
+          if (!shapeCopy.pageId) {
+            shapeCopy.pageId = currentPageId;
+          }
+          
+          return shapeCopy;
+        });
+      
+      // Update cache
+      _cachedVisibleShapes = result;
+      _isCacheValid = true;
+      
+      return result;
+    } catch (error) {
+      console.error('Error in computeVisibleShapesNonReactive:', error);
+      
+      // Return the last known good cache or an empty array
+      return _cachedVisibleShapes || [];
+    }
   }
   
   // Function to invalidate the cache
@@ -221,47 +248,77 @@ export const useCanvasStore = defineStore('canvas', () => {
 
   // Actions
   function initializeApp() {
+    console.log('Initializing app...');
+    
+    // Initialize default pages
     initializeDefaultPage();
     
-    // Ensure the default layer exists
-    if (layers.value.length === 0) {
-      console.log('No layers found, creating default layer');
-      layers.value = [
-        { id: 'layer-0', name: 'Layer 1', visible: true, frozen: false, opacity: 100, shapes: [] }
-      ];
-      activeLayerId.value = 'layer-0';
-    }
+    // Ensure the default layers exist for each page
+    initializeDefaultLayers();
     
-    // Ensure shapes array is populated from layers
-    shapes.value = getAllShapes();
+    // Ensure shapes array is populated from layers and properly synchronized
+    synchronizeShapes();
+    
+    // Update visible layers based on active page
+    updateVisibleLayers();
     
     console.log('After initialization:');
-    console.log('- Layers:', layers.value);
+    console.log('- Pages:', pages.value.map(p => `${p.id} (${p.name})`));
+    console.log('- Active page ID:', activePageId.value);
+    console.log('- Layers:', layers.value.map(l => `${l.id} (${l.name}) - pageId: ${l.pageId || 'none'}`));
     console.log('- Active layer ID:', activeLayerId.value);
-    console.log('- Shapes:', shapes.value);
+    console.log('- Shapes:', shapes.value.length);
     
+    // Completely disable auto-save messages
+    autoSaveStatus.value = null;
+    autoSaveMessage.value = '';
+    
+    // Ensure no auto-save messages will be shown
+    const originalSetTimeout = window.setTimeout;
+    window.setTimeout = function(callback, delay) {
+      // Intercept any setTimeout calls that might set autoSaveStatus or autoSaveMessage
+      if (callback.toString().includes('autoSaveStatus') || 
+          callback.toString().includes('autoSaveMessage')) {
+        console.log('Blocked auto-save message timeout');
+        return null;
+      }
+      return originalSetTimeout(callback, delay);
+    };
+    
+    // Initialize history
     history.value = [JSON.stringify(shapes.value)];
     historyIndex.value = 0;
+    
+    // Initialize auto-save
     setTimeout(() => {
       autoSaveEnabled.value = true;
       initAutoSave();
     }, 2000);
+    
+    console.log('App initialization complete');
   }
 
   function initializeDefaultPage() {
+    console.log('Initializing default pages...');
+    
     if (pages.value.length === 0) {
+      // Create unique IDs for the pages
+      const mainPageId = `page-${Date.now()}`;
+      const bgPageId = `page-bg-${Date.now() + 1}`; // Add 1 to ensure unique ID
+      
+      // Create the pages
       pages.value = [
         {
-          id: `page-${Date.now()}`,
+          id: mainPageId,
           name: 'Page 1',
           type: 'foreground',
-          backgroundPageId: '',
+          backgroundPageId: bgPageId, // Link to the background page
           description: 'Default page',
           drawingType: 'default',
           shapes: [],
         },
         {
-          id: `page-bg-${Date.now()}`,
+          id: bgPageId,
           name: 'Background',
           type: 'background',
           backgroundPageId: '',
@@ -270,7 +327,62 @@ export const useCanvasStore = defineStore('canvas', () => {
           shapes: [],
         },
       ];
-      activePageId.value = pages.value[0].id;
+      
+      // Set the active page to the main page
+      activePageId.value = mainPageId;
+      
+      console.log(`Created default pages: Main (${mainPageId}), Background (${bgPageId})`);
+    } else {
+      console.log(`Using existing pages: ${pages.value.map(p => p.name).join(', ')}`);
+    }
+  }
+  
+  function initializeDefaultLayers() {
+    console.log('Initializing default layers...');
+    
+    // Check if we need to create layers
+    if (layers.value.length === 0) {
+      // Create a layer for each page
+      pages.value.forEach(page => {
+        const layerId = `layer-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        
+        // Create a layer for this page
+        const newLayer = {
+          id: layerId,
+          name: `Layer 1 (${page.name})`,
+          visible: true,
+          frozen: false,
+          opacity: 100,
+          pageId: page.id, // Associate the layer with the page
+          shapes: []
+        };
+        
+        // Add the layer to the layers array
+        layers.value.push(newLayer);
+        
+        console.log(`Created default layer ${layerId} for page ${page.id} (${page.name})`);
+      });
+      
+      // Set the active layer to the first layer
+      if (layers.value.length > 0) {
+        activeLayerId.value = layers.value[0].id;
+        console.log(`Set active layer to ${activeLayerId.value}`);
+      }
+    } else {
+      // Ensure existing layers have pageId property
+      layers.value.forEach(layer => {
+        if (!layer.pageId) {
+          // Assign to active page if no pageId
+          layer.pageId = activePageId.value;
+          console.log(`Assigned existing layer ${layer.id} to active page ${activePageId.value}`);
+        }
+      });
+      
+      // Ensure active layer is set
+      if (!activeLayerId.value && layers.value.length > 0) {
+        activeLayerId.value = layers.value[0].id;
+        console.log(`Set active layer to ${activeLayerId.value}`);
+      }
     }
   }
 
@@ -411,8 +523,24 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   }
   
   // Update the main shapes array with the current page's shapes
-  shapes.value = getPageShapes(activePageId.value);
+  const updatedShapes = getPageShapes(activePageId.value);
+  console.log('Got updated shapes from getPageShapes:', updatedShapes.length, 'shapes');
   
+  // Make sure we're not losing any shapes
+  if (updatedShapes.length < shapes.value.length && !newShapes.some(s => s.type === 'image')) {
+    console.warn('Warning: Updated shapes array is smaller than current shapes array. This might cause shapes to disappear.');
+    console.log('Current shapes:', shapes.value.length, 'Updated shapes:', updatedShapes.length);
+    
+    // Make sure all new shapes are included
+    newShapes.forEach(newShape => {
+      if (!updatedShapes.some(s => s.id === newShape.id)) {
+        console.log('Adding missing new shape to updated shapes array:', newShape.id);
+        updatedShapes.push(newShape);
+      }
+    });
+  }
+  
+  shapes.value = updatedShapes;
   console.log('Updated shapes array, now has', shapes.value.length, 'shapes');
   
   // Save to history and mark document as modified
@@ -512,14 +640,53 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   
   // Update a shape in layers and pages without triggering reactivity
   function updateShapeInLayersAndPages(updatedShape) {
+    let shapeFound = false;
+    
     // Update in layers
     for (let i = 0; i < layers.value.length; i++) {
       const layer = layers.value[i];
-      if (layer.id === updatedShape.layerId) {
-        const shapeIndex = layer.shapes.findIndex(s => s.id === updatedShape.id);
-        if (shapeIndex !== -1) {
-          layer.shapes[shapeIndex] = updatedShape;
+      const shapeIndex = layer.shapes.findIndex(s => s.id === updatedShape.id);
+      if (shapeIndex !== -1) {
+        // Update the shape in the layer
+        layer.shapes[shapeIndex] = {
+          ...layer.shapes[shapeIndex],
+          ...updatedShape
+        };
+        shapeFound = true;
+        
+        // If layerId doesn't match, this means the shape was moved to another layer
+        // We need to handle this case by ensuring the shape is in the correct layer
+        if (layer.id !== updatedShape.layerId && updatedShape.layerId) {
+          // Remove from current layer
+          layer.shapes.splice(shapeIndex, 1);
+          
+          // Add to the correct layer
+          const targetLayer = layers.value.find(l => l.id === updatedShape.layerId);
+          if (targetLayer) {
+            targetLayer.shapes.push(updatedShape);
+          } else {
+            console.warn(`Target layer ${updatedShape.layerId} not found for shape ${updatedShape.id}`);
+          }
         }
+      }
+    }
+    
+    // If shape wasn't found in any layer but has a valid layerId, add it to that layer
+    if (!shapeFound && updatedShape.layerId) {
+      const targetLayer = layers.value.find(l => l.id === updatedShape.layerId);
+      if (targetLayer) {
+        targetLayer.shapes.push(updatedShape);
+        console.log(`Added missing shape ${updatedShape.id} to layer ${updatedShape.layerId}`);
+        shapeFound = true;
+      }
+    }
+    
+    // If shape still wasn't found, add it to the active layer as a fallback
+    if (!shapeFound && activeLayerId.value) {
+      const activeLayer = layers.value.find(l => l.id === activeLayerId.value);
+      if (activeLayer) {
+        activeLayer.shapes.push(updatedShape);
+        console.log(`Added missing shape ${updatedShape.id} to active layer ${activeLayerId.value}`);
       }
     }
     
@@ -545,10 +712,12 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
     
     // Special handling for drag updates - bypass the queue and update directly
     // This avoids recursion issues during drag operations
-    if (updatedShape._isDragUpdate) {
-      // Create a clean copy without the _isDragUpdate flag
+    if (updatedShape._isDragUpdate || updatedShape._isFinalDragUpdate) {
+      // Create a clean copy without the special flags
       const dragShape = { ...updatedShape };
       delete dragShape._isDragUpdate;
+      delete dragShape._isDragOperation;
+      delete dragShape._isFinalDragUpdate;
       
       // Process minimal validation for drag operations
       if (!dragShape.fill) dragShape.fill = '#3B82F6';
@@ -557,25 +726,67 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
       // Find the shape in the current array and update it directly
       const index = shapes.value.findIndex(s => s.id === dragShape.id);
       if (index !== -1) {
-        // Update the shape in the array
+        // For drag operations, only update position properties to avoid duplication
         const updatedShapes = [...shapes.value];
+        
+        // Create a minimal update to avoid duplication issues
         updatedShapes[index] = {
           ...shapes.value[index],
-          ...dragShape,
-          // Ensure position is updated
+          // Only update position properties
           x: dragShape.x,
-          y: dragShape.y
+          y: dragShape.y,
+          // Ensure these properties are set for selection and movement
+          selectable: shapes.value[index].selectable !== false,
+          movable: shapes.value[index].movable !== false
         };
+        
+        // For final updates after drag is complete, we can save to history
+        const isFinalUpdate = updatedShape._isFinalDragUpdate;
         
         // Update the shapes array
         shapes.value = updatedShapes;
         
         // Also update in layers and pages (non-reactively)
-        updateShapeInLayersAndPages(dragShape);
+        updateShapeInLayersAndPages({
+          id: dragShape.id,
+          x: dragShape.x,
+          y: dragShape.y
+        });
         
-        // Don't save to history during drag to avoid excessive history entries
-        // We'll save when the drag is complete
+        // Mark document as modified
         documentModified.value = true;
+        
+        // Save to history only for the final update after drag is complete
+        if (isFinalUpdate) {
+          saveToHistory();
+        }
+        
+        // Invalidate the visible shapes cache
+        invalidateVisibleShapesCache();
+        
+        return;
+      } else {
+        console.warn(`Shape with ID ${dragShape.id} not found in shapes array, adding it`);
+        
+        // If the shape doesn't exist, add it to the shapes array with required properties
+        const newShape = {
+          ...dragShape,
+          selectable: dragShape.selectable !== false,
+          movable: dragShape.movable !== false
+        };
+        
+        shapes.value.push(newShape);
+        
+        // Also add it to the appropriate layer
+        if (newShape.layerId) {
+          const layerIndex = layers.value.findIndex(l => l.id === newShape.layerId);
+          if (layerIndex !== -1) {
+            if (!layers.value[layerIndex].shapes) {
+              layers.value[layerIndex].shapes = [];
+            }
+            layers.value[layerIndex].shapes.push(newShape);
+          }
+        }
         
         // Invalidate the visible shapes cache
         invalidateVisibleShapesCache();
@@ -674,15 +885,30 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   }
 
   function deleteShapes(shapeIds) {
+    if (!shapeIds || !Array.isArray(shapeIds) || shapeIds.length === 0) {
+      console.warn('No valid shape IDs provided for deletion');
+      return;
+    }
+    
     console.log(`Deleting shapes with IDs: ${shapeIds.join(', ')}`);
     
+    // Create a Set for faster lookups
+    const shapeIdSet = new Set(shapeIds);
+    
     // Remove from main shapes array
-    shapes.value = shapes.value.filter((shape) => !shapeIds.includes(shape.id));
+    const originalCount = shapes.value.length;
+    shapes.value = shapes.value.filter((shape) => !shapeIdSet.has(shape.id));
+    console.log(`Removed ${originalCount - shapes.value.length} shapes from main shapes array`);
     
     // Remove from layers
     layers.value.forEach((layer) => {
+      if (!layer.shapes) {
+        layer.shapes = [];
+        return;
+      }
+      
       const beforeCount = layer.shapes.length;
-      layer.shapes = layer.shapes.filter((shape) => !shapeIds.includes(shape.id));
+      layer.shapes = layer.shapes.filter((shape) => !shapeIdSet.has(shape.id));
       const afterCount = layer.shapes.length;
       
       if (beforeCount !== afterCount) {
@@ -690,20 +916,27 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
       }
     });
     
-    // Remove from current page
-    const currentPage = pages.value.find(p => p.id === activePageId.value);
-    if (currentPage && currentPage.shapes) {
-      const beforeCount = currentPage.shapes.length;
-      currentPage.shapes = currentPage.shapes.filter((shape) => !shapeIds.includes(shape.id));
-      const afterCount = currentPage.shapes.length;
-      
-      if (beforeCount !== afterCount) {
-        console.log(`Removed ${beforeCount - afterCount} shapes from page ${activePageId.value}`);
+    // Remove from all pages, not just the current one
+    pages.value.forEach(page => {
+      if (page && page.shapes) {
+        const beforeCount = page.shapes.length;
+        page.shapes = page.shapes.filter((shape) => !shapeIdSet.has(shape.id));
+        const afterCount = page.shapes.length;
+        
+        if (beforeCount !== afterCount) {
+          console.log(`Removed ${beforeCount - afterCount} shapes from page ${page.id}`);
+        }
       }
-    }
+    });
     
     // Clear from selection
-    selectedShapes.value = selectedShapes.value.filter((id) => !shapeIds.includes(id));
+    const selectionBefore = selectedShapes.value.length;
+    selectedShapes.value = selectedShapes.value.filter((id) => !shapeIdSet.has(id));
+    console.log(`Removed ${selectionBefore - selectedShapes.value.length} shapes from selection`);
+    
+    // Ensure the shapes array is synchronized with layers
+    // This is a safety measure to ensure consistency
+    synchronizeShapes();
     
     saveToHistory();
     documentModified.value = true;
@@ -711,17 +944,142 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   }
 
   function selectShapes(shapeIds) {
+    if (!shapeIds || !Array.isArray(shapeIds)) {
+      console.warn('Invalid shape IDs provided for selection');
+      return;
+    }
+    
     console.log('Selecting shapes, IDs:', shapeIds, 'Current shapes:', shapes.value.length);
     
-    // Check if the selection has actually changed to prevent unnecessary updates
-    const currentIds = selectedShapes.value;
-    const newIds = [...shapeIds];
+    try {
+      // Validate that all shapes exist in the shapes array
+      const validShapeIds = shapeIds.filter(id => {
+        const shapeExists = shapes.value.some(shape => shape.id === id);
+        if (!shapeExists) {
+          console.warn(`Shape with ID ${id} not found in shapes array, skipping selection`);
+        }
+        return shapeExists;
+      });
+      
+      // Check if the selection has actually changed to prevent unnecessary updates
+      const currentIds = selectedShapes.value;
+      const newIds = [...validShapeIds];
+      
+      // Only update if the arrays are different
+      if (currentIds.length !== newIds.length || 
+          !currentIds.every(id => newIds.includes(id)) || 
+          !newIds.every(id => currentIds.includes(id))) {
+        selectedShapes.value = newIds;
+        console.log('Selection updated to:', newIds);
+        
+        // Invalidate the visible shapes cache to ensure it's recalculated
+        invalidateVisibleShapesCache();
+      } else {
+        console.log('Selection unchanged');
+      }
+    } catch (error) {
+      console.error('Error in selectShapes:', error);
+    }
+  }
+
+  function updateVisibleLayers() {
+    console.log('Updating visible layers for page:', activePageId.value);
     
-    // Only update if the arrays are different
-    if (currentIds.length !== newIds.length || 
-        !currentIds.every(id => newIds.includes(id)) || 
-        !newIds.every(id => currentIds.includes(id))) {
-      selectedShapes.value = newIds;
+    try {
+      // Get the current page
+      const currentPage = pages.value.find(p => p.id === activePageId.value);
+      if (!currentPage) {
+        console.warn(`Current page ${activePageId.value} not found, cannot update layers`);
+        
+        // If no current page is found but we have pages, set the first one as active
+        if (pages.value.length > 0) {
+          console.log('Setting first page as active since current page not found');
+          activePageId.value = pages.value[0].id;
+          return updateVisibleLayers(); // Retry with the new active page
+        }
+        
+        return;
+      }
+      
+      // Check if we need to include background page layers
+      let backgroundPageId = null;
+      if (currentPage.type === 'foreground' && currentPage.backgroundPageId) {
+        backgroundPageId = currentPage.backgroundPageId;
+        console.log(`Current page has background page: ${backgroundPageId}`);
+      }
+      
+      // Update visibility of layers based on the current page
+      layers.value.forEach(layer => {
+        // Layer belongs to current page
+        if (layer.pageId === activePageId.value) {
+          layer.visible = true;
+          console.log(`Layer ${layer.id} (${layer.name}) is visible (current page)`);
+        }
+        // Layer belongs to background page of current page
+        else if (backgroundPageId && layer.pageId === backgroundPageId) {
+          layer.visible = true;
+          console.log(`Layer ${layer.id} (${layer.name}) is visible (background page)`);
+        }
+        // Layer belongs to another page
+        else {
+          layer.visible = false;
+          console.log(`Layer ${layer.id} (${layer.name}) is hidden (different page)`);
+        }
+      });
+      
+      // Ensure we have at least one visible layer for the current page
+      const hasVisibleLayer = layers.value.some(layer => 
+        layer.visible && layer.pageId === activePageId.value
+      );
+      
+      if (!hasVisibleLayer) {
+        console.log('No visible layers for current page, creating default layer');
+        
+        // Create a default layer for the current page
+        const layerId = `layer-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        const newLayer = {
+          id: layerId,
+          name: `Layer 1 (${currentPage.name})`,
+          visible: true,
+          frozen: false,
+          opacity: 100,
+          pageId: activePageId.value,
+          shapes: []
+        };
+        
+        // Add the layer to the layers array
+        layers.value.push(newLayer);
+        console.log(`Added default layer ${layerId} for page ${activePageId.value}`);
+        
+        // Set the new layer as active
+        activeLayerId.value = layerId;
+      }
+      
+      // Make sure the active layer is set to a visible layer
+      const activeLayerIsVisible = layers.value.some(layer => 
+        layer.id === activeLayerId.value && layer.visible
+      );
+      
+      if (!activeLayerIsVisible) {
+        // Find the first visible layer for the current page
+        const visibleLayer = layers.value.find(layer => 
+          layer.visible && layer.pageId === activePageId.value
+        );
+        
+        if (visibleLayer) {
+          console.log(`Setting active layer to visible layer: ${visibleLayer.id}`);
+          activeLayerId.value = visibleLayer.id;
+        }
+      }
+      
+      // Invalidate the visible shapes cache to ensure it's recalculated
+      invalidateVisibleShapesCache();
+      
+      // Update the shapes array to reflect the current page's shapes
+      shapes.value = getPageShapes(activePageId.value);
+      console.log(`Updated shapes array with ${shapes.value.length} shapes from page ${activePageId.value}`);
+    } catch (error) {
+      console.error('Error in updateVisibleLayers:', error);
     }
   }
 
@@ -733,6 +1091,7 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
       visible: true,
       frozen: false,
       opacity: 100,
+      pageId: activePageId.value, // Assign the layer to the current page
       shapes: [],
     };
     layers.value.push(newLayer);
@@ -836,19 +1195,100 @@ stroke: (s.stroke && s.stroke.match(/^#[0-9A-Fa-f]{6}$|^rgba\(\d+,\d+,\d+,\d+(\.
   }
 
   function addPage(pageData) {
-    const newPage = {
-      id: `page-${Date.now()}`,
-      name: pageData.name || 'New Page',
-      type: pageData.type || 'foreground',
-      backgroundPageId: pageData.backgroundPageId || '',
-      description: pageData.description || '',
-      drawingType: pageData.drawingType || 'default',
-      shapes: [],
-    };
-    pages.value.push(newPage);
-    activePageId.value = newPage.id;
-    shapes.value = getPageShapes(newPage.id);
-    saveToHistory();
+    console.log('Adding new page with data:', pageData);
+    
+    try {
+      // Save the current state before adding a new page
+      saveToHistory();
+      
+      // Create a unique page ID with timestamp and random string to ensure uniqueness
+      const pageId = `page-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      
+      // Create the new page
+      const newPage = {
+        id: pageId,
+        name: pageData.name || 'New Page',
+        type: pageData.type || 'foreground',
+        backgroundPageId: pageData.backgroundPageId || '',
+        description: pageData.description || '',
+        drawingType: pageData.drawingType || 'default',
+        shapes: [],
+      };
+      
+      // Add the page to the pages array
+      pages.value.push(newPage);
+      console.log(`Added new page: ${newPage.id} (${newPage.name})`);
+      
+      // Create a default layer for this page
+      const layerId = `layer-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const newLayer = {
+        id: layerId,
+        name: `Layer 1 (${newPage.name})`,
+        visible: true,
+        frozen: false,
+        opacity: 100,
+        pageId: pageId, // Associate the layer with the new page
+        shapes: []
+      };
+      
+      // Add the layer to the layers array
+      layers.value.push(newLayer);
+      console.log(`Added default layer ${layerId} for page ${pageId}`);
+      
+      // Save the current page's shapes before switching
+      if (activePageId.value) {
+        const currentPageShapes = shapes.value.filter(shape => 
+          (!shape.pageId || shape.pageId === activePageId.value) && !shape.isBackgroundShape
+        );
+        
+        // Find the current page
+        const currentPageIndex = pages.value.findIndex(p => p.id === activePageId.value);
+        if (currentPageIndex !== -1) {
+          // Update the current page with the current shapes
+          const updatedPage = { 
+            ...pages.value[currentPageIndex], 
+            shapes: JSON.parse(JSON.stringify(currentPageShapes))
+          };
+          
+          // Replace the page in the pages array
+          pages.value.splice(currentPageIndex, 1, updatedPage);
+          console.log(`Saved ${currentPageShapes.length} shapes to page ${activePageId.value} before switching`);
+        }
+      }
+      
+      // Set the new page as active
+      activePageId.value = pageId;
+      console.log(`Set active page to: ${pageId}`);
+      
+      // Set the new layer as active
+      activeLayerId.value = layerId;
+      console.log(`Set active layer to: ${layerId}`);
+      
+      // Load shapes for the new page (should be empty initially)
+      shapes.value = [];
+      console.log(`Initialized empty shapes array for new page ${pageId}`);
+      
+      // Update visible layers for the new page
+      updateVisibleLayers();
+      
+      // Clear selection when creating a new page
+      selectedShapes.value = [];
+      
+      // Save to history again after the page is added
+      saveToHistory();
+      
+      // Keep the dialog open if needed
+      // showAddPageDialog.value = false;
+      
+      // Invalidate the visible shapes cache
+      invalidateVisibleShapesCache();
+      
+      // Return the new page ID
+      return pageId;
+    } catch (error) {
+      console.error('Error in addPage:', error);
+      return null;
+    }
   }
 
   function updatePage(updatedPage) {
@@ -904,49 +1344,68 @@ function setActiveTab(tab) {
       return activePageId.value;
     }
     
-    // Save current shapes to the current page before switching
-    if (activePage.value) {
-      // Filter shapes that belong to the current page
-      const currentPageShapes = shapes.value.filter(shape => 
-        !shape.pageId || shape.pageId === activePageId.value
-      );
+    try {
+      // Save current shapes to the current page before switching
+      if (activePage.value) {
+        // Filter shapes that belong to the current page (exclude background shapes)
+        const currentPageShapes = shapes.value.filter(shape => 
+          (!shape.pageId || shape.pageId === activePageId.value) && !shape.isBackgroundShape
+        );
+        
+        console.log(`Found ${currentPageShapes.length} shapes belonging to current page ${activePageId.value}`);
+        
+        // Deep clone the shapes to avoid reference issues
+        const currentShapes = JSON.parse(JSON.stringify(currentPageShapes));
+        
+        // Find the current page
+        const currentPageIndex = pages.value.findIndex(p => p.id === activePageId.value);
+        if (currentPageIndex !== -1) {
+          // Update the current page with the current shapes
+          const updatedPage = { 
+            ...pages.value[currentPageIndex], 
+            shapes: currentShapes 
+          };
+          
+          // Replace the page in the pages array
+          pages.value.splice(currentPageIndex, 1, updatedPage);
+          
+          console.log(`Saved ${currentShapes.length} shapes to page ${activePageId.value}`);
+        } else {
+          console.warn(`Current page ${activePageId.value} not found in pages array`);
+        }
+      }
       
-      // Deep clone the shapes to avoid reference issues
-      const currentShapes = JSON.parse(JSON.stringify(currentPageShapes));
+      // Set the new active page
+      activePageId.value = pageId;
+      console.log('activePageId.value set to:', activePageId.value);
       
-      // Update the current page with the current shapes
-      pages.value = pages.value.map((page) =>
-        page.id === activePageId.value ? { ...page, shapes: currentShapes } : page
-      );
+      // Load shapes from the new page (this already includes background page shapes)
+      const newShapes = getPageShapes(pageId);
       
-      console.log(`Saved ${currentShapes.length} shapes to page ${activePageId.value}`);
+      // Log the background page if any
+      if (targetPage.type === 'foreground' && targetPage.backgroundPageId) {
+        console.log(`Page ${pageId} has background page: ${targetPage.backgroundPageId}`);
+      }
+      
+      // Update the shapes array (getPageShapes already handles pageId assignment)
+      shapes.value = newShapes;
+      console.log(`Loaded ${newShapes.length} shapes from page ${pageId}`);
+      
+      // Update visible layers for the new page
+      updateVisibleLayers();
+      
+      // Clear selection when switching pages
+      selectedShapes.value = [];
+      
+      // Save this state to history
+      saveToHistory();
+      
+      // Return the new active page ID for confirmation
+      return activePageId.value;
+    } catch (error) {
+      console.error('Error in setActivePage:', error);
+      return activePageId.value;
     }
-    
-    // Set the new active page
-    activePageId.value = pageId;
-    console.log('activePageId.value set to:', activePageId.value);
-    
-    // Load shapes from the new page (this already includes background page shapes)
-    const newShapes = getPageShapes(pageId);
-    
-    // Log the background page if any
-    const currentTargetPage = pages.value.find(p => p.id === pageId);
-    if (currentTargetPage && currentTargetPage.type === 'foreground' && currentTargetPage.backgroundPageId) {
-      console.log(`Page ${pageId} has background page: ${currentTargetPage.backgroundPageId}`);
-    }
-    
-    // Update the shapes array (getPageShapes already handles pageId assignment)
-    shapes.value = newShapes;
-    console.log(`Loaded ${newShapes.length} shapes from page ${pageId}`);
-    
-    // Clear selection when switching pages
-    selectedShapes.value = [];
-    
-    // Save this state to history
-    saveToHistory();
-    
-    // Return the new active page ID for confirmation
-    return activePageId.value;
   }
 
   function renamePage(pageId, name) {
@@ -987,6 +1446,8 @@ function setActiveTab(tab) {
   }
 
   function getPageShapes(pageId) {
+    console.log(`Getting shapes for page ${pageId}`);
+    
     const page = pages.value.find((p) => p.id === pageId);
     if (!page) {
       console.warn(`Page with ID ${pageId} not found`);
@@ -996,6 +1457,7 @@ function setActiveTab(tab) {
     // Ensure page.shapes is an array
     if (!page.shapes) {
       page.shapes = [];
+      console.log(`Initialized empty shapes array for page ${pageId}`);
     } else if (!Array.isArray(page.shapes)) {
       console.warn(`Page ${pageId} has invalid shapes property, resetting to empty array`);
       page.shapes = [];
@@ -1003,12 +1465,61 @@ function setActiveTab(tab) {
     
     // Create a deep copy of the shapes to avoid reference issues
     let allShapes = JSON.parse(JSON.stringify(page.shapes || []));
+    console.log(`Found ${allShapes.length} shapes directly in page ${pageId}`);
     
-    // Ensure all shapes have the correct pageId
-    allShapes = allShapes.map(shape => ({
-      ...shape,
-      pageId: pageId // Ensure each shape knows which page it belongs to
-    }));
+    // Check for any shapes that might be in layers but not in the page shapes
+    const layerShapes = [];
+    layers.value.forEach(layer => {
+      if (layer.pageId === pageId && layer.shapes && Array.isArray(layer.shapes)) {
+        console.log(`Checking layer ${layer.id} (${layer.name}) for page ${pageId}`);
+        
+        layer.shapes.forEach(shape => {
+          // Only include shapes for this page that aren't already in allShapes
+          if ((shape.pageId === pageId || !shape.pageId) && !allShapes.some(s => s.id === shape.id)) {
+            console.log(`Found shape ${shape.id} in layer ${layer.id} that's not in page shapes, adding it`);
+            
+            // Make sure the shape has the correct pageId
+            const shapeCopy = JSON.parse(JSON.stringify(shape));
+            shapeCopy.pageId = pageId;
+            shapeCopy.layerId = layer.id;
+            
+            layerShapes.push(shapeCopy);
+          }
+        });
+      }
+    });
+    
+    // Add any missing layer shapes to allShapes
+    if (layerShapes.length > 0) {
+      console.log(`Adding ${layerShapes.length} shapes from layers to page ${pageId}`);
+      allShapes = [...allShapes, ...layerShapes];
+      
+      // Also update the page.shapes array to include these shapes
+      page.shapes = [...page.shapes, ...layerShapes];
+    }
+    
+    // Ensure all shapes have the correct pageId and layerId
+    allShapes = allShapes.map(shape => {
+      // Find the layer this shape belongs to if it doesn't have a layerId
+      let layerId = shape.layerId;
+      if (!layerId) {
+        // Try to find a layer for this shape
+        const layer = layers.value.find(l => 
+          l.pageId === pageId && 
+          (!l.type || l.type === 'default')
+        );
+        if (layer) {
+          layerId = layer.id;
+          console.log(`Assigned shape ${shape.id} to layer ${layerId}`);
+        }
+      }
+      
+      return {
+        ...shape,
+        pageId: pageId, // Ensure each shape knows which page it belongs to
+        layerId: layerId // Ensure each shape has a layerId if possible
+      };
+    });
     
     // If this is a foreground page with a background, include background shapes
     if (page.type === 'foreground' && page.backgroundPageId) {
@@ -1026,17 +1537,19 @@ function setActiveTab(tab) {
         
         // Add background shapes first (so they appear behind foreground shapes)
         let bgShapes = JSON.parse(JSON.stringify(bgPage.shapes || []));
+        console.log(`Found ${bgShapes.length} shapes in background page ${bgPage.id}`);
         
-        // Ensure background shapes have the correct pageId
+        // Ensure background shapes have the correct pageId and are marked as background shapes
         bgShapes = bgShapes.map(shape => ({
           ...shape,
           pageId: bgPage.id, // Ensure each background shape knows which page it belongs to
           isBackgroundShape: true // Mark as background shape for special handling
         }));
         
+        // Add background shapes first so they appear behind foreground shapes
         allShapes = [...bgShapes, ...allShapes];
         
-        console.log(`Loaded ${bgShapes.length} shapes from background page ${bgPage.id}`);
+        console.log(`Added ${bgShapes.length} shapes from background page ${bgPage.id}`);
       } else {
         console.warn(`Background page ${page.backgroundPageId} not found for page ${pageId}`);
       }
@@ -1219,6 +1732,40 @@ function setActiveTab(tab) {
     contextMenuPosition.value = { x: event.clientX, y: event.clientY };
     document.addEventListener('click', closeContextMenu);
   }
+  
+  function toggleAddPageDialog(initialData = null) {
+    console.log('toggleAddPageDialog called with initialData:', initialData);
+    
+    // If initialData is provided, use it to initialize the dialog
+    if (initialData) {
+      pageDialogInitialData.value = {
+        name: initialData.name || '',
+        type: initialData.type || 'foreground',
+        backgroundPageId: initialData.backgroundPageId || '',
+        description: initialData.description || '',
+        drawingType: initialData.drawingType || 'default'
+      };
+    } else {
+      // Reset to default values
+      pageDialogInitialData.value = {
+        name: '',
+        type: 'foreground',
+        backgroundPageId: '',
+        description: '',
+        drawingType: 'default'
+      };
+    }
+    
+    // If initialData is provided, we're opening the dialog
+    // If no initialData and the dialog is already open, we're closing it
+    if (initialData) {
+      showAddPageDialog.value = true;
+    } else {
+      // Toggle the dialog state
+      showAddPageDialog.value = !showAddPageDialog.value;
+    }
+    console.log('showAddPageDialog set to:', showAddPageDialog.value);
+  }
 
   function closeContextMenu() {
     contextMenuPage.value = null;
@@ -1286,8 +1833,141 @@ function setActiveTab(tab) {
   }
 
   function togglePartPropertiesDialog(properties) {
-    partPropertiesData.value = { ...properties };
-    showPartPropertiesDialog.value = true;
+    console.log('togglePartPropertiesDialog called with properties:', properties);
+    
+    try {
+      // Create a new object with default values for missing properties
+      const props = properties || {};
+      
+      // Log the properties for debugging
+      console.log('Properties in togglePartPropertiesDialog:', JSON.stringify(props, null, 2));
+      
+      // Check if we have a direct database part object with PascalCase properties
+      if (props.PartNumber || props.Description || props.Manufacturer || props.ItemNumber) {
+        console.log('Detected database part object format with PascalCase properties');
+        
+        // Create a properly formatted part properties object
+        partPropertiesData.value = {
+          name: props.Description || props.name || '',
+          haystackTag: props.haystackTag || `{id:${props.ItemNumber || 'unknown'}, ${(props.Class || 'part').toLowerCase()}:true}`,
+          partNumber: props.PartNumber || props.partNumber || '',
+          manufacturer: props.Manufacturer || props.manufacturer || '',
+          quantity: typeof props.quantity === 'number' ? props.quantity : 1,
+          description: props.description || `${props.Class || ''} - ${props.SubClass || ''}`,
+          pointType: props.pointType || '',
+          pdfPath: props.ProductCut || props.pdfPath || '',
+          
+          // Preserve original properties for reference
+          _originalPart: JSON.parse(JSON.stringify(props))
+        };
+        
+        // Log the formatted properties
+        console.log('Formatted database part properties:', JSON.stringify(partPropertiesData.value, null, 2));
+      } 
+      // Check if we have a part object with camelCase properties
+      else if (props.partNumber || props.name || props.manufacturer) {
+        console.log('Detected part object format with camelCase properties');
+        
+        // Create a properly formatted part properties object
+        partPropertiesData.value = {
+          name: props.name || props.Description || '',
+          haystackTag: props.haystackTag || '',
+          partNumber: props.partNumber || props.PartNumber || '',
+          manufacturer: props.manufacturer || props.Manufacturer || '',
+          quantity: typeof props.quantity === 'number' ? props.quantity : 1,
+          description: props.description || props.Description || '',
+          pointType: props.pointType || '',
+          pdfPath: props.pdfPath || props.ProductCut || '',
+          
+          // Preserve original properties for reference
+          _originalPart: JSON.parse(JSON.stringify(props))
+        };
+        
+        // Log the formatted properties
+        console.log('Formatted part properties:', JSON.stringify(partPropertiesData.value, null, 2));
+      }
+      // If we have an _originalPart property, use that
+      else if (props._originalPart) {
+        console.log('Using _originalPart property:', JSON.stringify(props._originalPart, null, 2));
+        
+        const originalPart = props._originalPart;
+        
+        // Create a properly formatted part properties object from the original part
+        partPropertiesData.value = {
+          name: originalPart.Description || originalPart.name || '',
+          haystackTag: originalPart.haystackTag || `{id:${originalPart.ItemNumber || 'unknown'}, ${(originalPart.Class || 'part').toLowerCase()}:true}`,
+          partNumber: originalPart.PartNumber || originalPart.partNumber || '',
+          manufacturer: originalPart.Manufacturer || originalPart.manufacturer || '',
+          quantity: typeof originalPart.quantity === 'number' ? originalPart.quantity : 1,
+          description: originalPart.description || `${originalPart.Class || ''} - ${originalPart.SubClass || ''}`,
+          pointType: originalPart.pointType || '',
+          pdfPath: originalPart.ProductCut || originalPart.pdfPath || '',
+          
+          // Preserve original part
+          _originalPart: JSON.parse(JSON.stringify(originalPart))
+        };
+        
+        // Log the formatted properties
+        console.log('Formatted original part properties:', JSON.stringify(partPropertiesData.value, null, 2));
+      }
+      // Default case - empty or unknown format
+      else {
+        console.log('No recognizable part properties format, using defaults or empty values');
+        
+        // Create a default part properties object
+        partPropertiesData.value = {
+          name: props.name || props.Description || '',
+          haystackTag: props.haystackTag || '',
+          partNumber: props.partNumber || props.PartNumber || '',
+          manufacturer: props.manufacturer || props.Manufacturer || '',
+          quantity: typeof props.quantity === 'number' ? props.quantity : 1,
+          description: props.description || props.Description || '',
+          pointType: props.pointType || '',
+          pdfPath: props.pdfPath || props.ProductCut || '',
+          
+          // Preserve original properties for reference
+          _originalPart: JSON.parse(JSON.stringify(props))
+        };
+        
+        // Log the default properties
+        console.log('Default part properties:', JSON.stringify(partPropertiesData.value, null, 2));
+      }
+      
+      // Format the Haystack tag if it's an object
+      if (typeof partPropertiesData.value.haystackTag === 'object') {
+        try {
+          // Convert to a formatted JSON string
+          partPropertiesData.value.haystackTag = JSON.stringify(partPropertiesData.value.haystackTag, null, 2);
+        } catch (e) {
+          console.warn('Error formatting Haystack tag:', e);
+          partPropertiesData.value.haystackTag = '';
+        }
+      }
+      
+      // Additional logging to verify the properties are set correctly
+      console.log('Final partPropertiesData value:', JSON.stringify(partPropertiesData.value, null, 2));
+      
+      // Show the dialog
+      showPartPropertiesDialog.value = true;
+    } catch (error) {
+      console.error('Error in togglePartPropertiesDialog:', error);
+      
+      // Set default values if there's an error
+      partPropertiesData.value = {
+        name: '',
+        haystackTag: '',
+        partNumber: '',
+        manufacturer: '',
+        quantity: 1,
+        description: '',
+        pointType: '',
+        pdfPath: '',
+        _originalPart: properties || {} // Still preserve the original properties
+      };
+      
+      // Show the dialog even if there's an error
+      showPartPropertiesDialog.value = true;
+    }
   }
   
   // Shape properties dialog
@@ -1309,36 +1989,70 @@ function setActiveTab(tab) {
   }
 
   function applyPartProperties(properties) {
+    console.log('Applying part properties:', properties);
     let updatedShape = null;
     
-    if (pendingShapeData.value) {
-      updatedShape = createShapeFromLibrary({ clientX: 400, clientY: 300 }, properties);
-    } else if (selectedShapes.value.length > 0) {
-      // Apply part properties to the selected shape
-      const shapeId = selectedShapes.value[0];
-      const shapeIndex = shapes.value.findIndex(s => s.id === shapeId);
-      
-      if (shapeIndex !== -1) {
-        // Create a copy of the shape
-        updatedShape = { ...shapes.value[shapeIndex] };
+    try {
+      if (pendingShapeData.value) {
+        updatedShape = createShapeFromLibrary({ clientX: 400, clientY: 300 }, properties);
+      } else if (selectedShapes.value.length > 0) {
+        // Apply part properties to the selected shape
+        const shapeId = selectedShapes.value[0];
+        const shapeIndex = shapes.value.findIndex(s => s.id === shapeId);
         
-        // Add part properties to the shape
-        updatedShape.partProperties = { ...properties };
-        
-        // Update the shape in the shapes array
-        shapes.value.splice(shapeIndex, 1, updatedShape);
-        
-        // Add to history
-        addToHistory({
-          type: 'update',
-          shapes: [updatedShape],
-          oldShapes: [shapes.value[shapeIndex]]
-        });
+        if (shapeIndex !== -1) {
+          // Create a deep copy of the shape
+          const oldShape = shapes.value[shapeIndex];
+          updatedShape = JSON.parse(JSON.stringify(oldShape));
+          
+          // Add part properties to the shape
+          updatedShape.partProperties = JSON.parse(JSON.stringify(properties));
+          
+          console.log('Updating shape with part properties:', updatedShape);
+          
+          // Update the shape in the shapes array
+          shapes.value.splice(shapeIndex, 1, updatedShape);
+          
+          // Also update the shape in the current page's shapes array
+          const currentPage = pages.value.find(p => p.id === activePageId.value);
+          if (currentPage && currentPage.shapes) {
+            const pageShapeIndex = currentPage.shapes.findIndex(s => s.id === shapeId);
+            if (pageShapeIndex !== -1) {
+              currentPage.shapes.splice(pageShapeIndex, 1, updatedShape);
+            }
+          }
+          
+          // Add to history
+          addToHistory({
+            type: 'update',
+            shapes: [updatedShape],
+            oldShapes: [oldShape]
+          });
+          
+          // Mark document as modified
+          documentModified.value = true;
+          performAutoSaveDebounced();
+          
+          // Show success notification
+          console.log('Part properties applied successfully to shape:', updatedShape.id);
+        }
       }
+    } catch (error) {
+      console.error('Error applying part properties:', error);
+    } finally {
+      // Always close the dialog and clear pending data
+      showPartPropertiesDialog.value = false;
+      pendingShapeData.value = null;
     }
     
-    showPartPropertiesDialog.value = false;
-    pendingShapeData.value = null;
+    // Force a refresh of the BOM Generator if it's open
+    if (showBOMGenerator.value) {
+      // Toggle it off and on to force a refresh
+      showBOMGenerator.value = false;
+      setTimeout(() => {
+        showBOMGenerator.value = true;
+      }, 100);
+    }
   }
   
   // Group shapes
@@ -1449,10 +2163,27 @@ function setActiveTab(tab) {
 
   function toggleBOMGenerator() {
     showBOMGenerator.value = !showBOMGenerator.value;
+    
+    // If showing the BOM Generator, make sure we have the latest shapes
+    if (showBOMGenerator.value) {
+      console.log('Opening BOM Generator with', shapes.value.length, 'shapes');
+      
+      // Log shapes with part properties for debugging
+      const shapesWithParts = shapes.value.filter(s => s.partProperties);
+      console.log('Shapes with part properties:', shapesWithParts.length);
+      shapesWithParts.forEach(s => {
+        console.log('Shape ID:', s.id, 'Part:', s.partProperties.name, 'Part Number:', s.partProperties.partNumber);
+      });
+    }
   }
   
   function toggleKeyboardShortcuts() {
     showKeyboardShortcuts.value = !showKeyboardShortcuts.value;
+  }
+  
+  function togglePartSelector() {
+    showPartSelector.value = !showPartSelector.value;
+    console.log('Part selector toggled:', showPartSelector.value);
   }
 
   function handleShapeDragStart(shape) {
@@ -1629,8 +2360,35 @@ function setActiveTab(tab) {
       newShape.partProperties = { ...partProperties };
     }
     if (newShape) {
+      console.log('Adding new shape from library:', newShape);
+      
+      // Make sure the shape has a pageId
+      newShape.pageId = activePageId.value;
+      
+      // Add the shape to the canvas
       const addedShape = addShape(newShape);
-      selectShapes([newShape.id]);
+      
+      // Make sure the shape is in the current page's shapes array
+      const currentPage = pages.value.find(p => p.id === activePageId.value);
+      if (currentPage) {
+        if (!currentPage.shapes) {
+          currentPage.shapes = [];
+        }
+        
+        // Check if the shape is already in the page's shapes
+        const existingIndex = currentPage.shapes.findIndex(s => s.id === addedShape.id);
+        if (existingIndex === -1) {
+          console.log('Adding shape to current page shapes array:', addedShape.id);
+          currentPage.shapes.push(addedShape);
+        }
+      }
+      
+      // Select the new shape
+      selectShapes([addedShape.id]);
+      
+      // Force a refresh of the shapes array
+      shapes.value = getPageShapes(activePageId.value);
+      
       return addedShape;
     }
     return null;
@@ -2337,18 +3095,109 @@ function setActiveTab(tab) {
       }
   }
 
+  // Synchronize shapes between the main shapes array and layers
+  function synchronizeShapes() {
+    console.log('Synchronizing shapes between main array and layers...');
+    
+    try {
+      // First, ensure all shapes have the correct pageId
+      shapes.value.forEach(shape => {
+        if (!shape.pageId) {
+          shape.pageId = activePageId.value;
+          console.log(`Assigned missing pageId ${activePageId.value} to shape ${shape.id}`);
+        }
+      });
+      
+      // Ensure all shapes have a layerId
+      shapes.value.forEach(shape => {
+        if (!shape.layerId) {
+          // Find a layer for this shape's page
+          const layer = layers.value.find(l => l.pageId === shape.pageId);
+          if (layer) {
+            shape.layerId = layer.id;
+            console.log(`Assigned layer ${layer.id} to shape ${shape.id}`);
+          } else {
+            // If no layer exists for this page, create one
+            const newLayer = {
+              id: `layer-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              name: `Layer 1 (Auto)`,
+              visible: true,
+              frozen: false,
+              opacity: 100,
+              pageId: shape.pageId,
+              shapes: []
+            };
+            layers.value.push(newLayer);
+            shape.layerId = newLayer.id;
+            console.log(`Created new layer ${newLayer.id} for shape ${shape.id} on page ${shape.pageId}`);
+          }
+        }
+      });
+      
+      // Ensure all shapes are in their respective layers
+      layers.value.forEach(layer => {
+        if (!layer.shapes) {
+          layer.shapes = [];
+        }
+        
+        // Find shapes that belong to this layer
+        const layerShapes = shapes.value.filter(shape => 
+          shape.layerId === layer.id
+        );
+        
+        // Update the layer's shapes array
+        layer.shapes = JSON.parse(JSON.stringify(layerShapes));
+        console.log(`Layer ${layer.id} now has ${layer.shapes.length} shapes`);
+      });
+      
+      // Ensure all shapes are in their respective pages
+      pages.value.forEach(page => {
+        if (!page.shapes) {
+          page.shapes = [];
+        }
+        
+        // Find shapes that belong to this page
+        const pageShapes = shapes.value.filter(shape => 
+          shape.pageId === page.id
+        );
+        
+        // Update the page's shapes array
+        page.shapes = JSON.parse(JSON.stringify(pageShapes));
+        console.log(`Page ${page.id} (${page.name}) now has ${page.shapes.length} shapes`);
+      });
+      
+      // Update the main shapes array with shapes from the current page
+      shapes.value = getPageShapes(activePageId.value);
+      
+      console.log('Shapes synchronized. Current page shapes:', shapes.value.length);
+      return shapes.value;
+    } catch (error) {
+      console.error('Error in synchronizeShapes:', error);
+      return shapes.value;
+    }
+  }
+
   function getAllShapes() {
+    console.log('Getting all shapes from all pages and layers...');
+    
     let allShapes = [];
     const idMap = new Map(); // Map to track shapes by ID
     
     // Get the current active page ID
     const currentPageId = activePageId.value;
+    console.log(`Current active page ID: ${currentPageId}`);
     
-    // Process each layer
-    layers.value.forEach((layer) => {
-      if (layer.shapes && Array.isArray(layer.shapes)) {
+    // First, collect shapes from all pages
+    pages.value.forEach(page => {
+      if (!page.shapes) {
+        page.shapes = [];
+      }
+      
+      if (Array.isArray(page.shapes)) {
+        console.log(`Processing ${page.shapes.length} shapes from page ${page.id} (${page.name})`);
+        
         // Filter out invalid shapes and 'select' type shapes
-        const validShapes = layer.shapes.filter((shape) => 
+        const validPageShapes = page.shapes.filter(shape => 
           shape && 
           typeof shape === 'object' && 
           shape.type && 
@@ -2356,18 +3205,29 @@ function setActiveTab(tab) {
           shape.id // Must have an ID
         );
         
-        // Map shapes to ensure they have all required properties
-        validShapes.forEach((shape) => {
-          // Create a new object to avoid reference issues
+        // Process each valid shape
+        validPageShapes.forEach(shape => {
+          // Create a processed shape with all required properties
           const processedShape = {
             ...shape,
             id: shape.id, // Preserve the original ID
-            layerId: layer.id, // Ensure layer ID is set
-            pageId: shape.pageId || currentPageId, // Ensure page ID is set
+            pageId: page.id, // Ensure page ID is set to this page
             // Handle coordinates and dimensions with proper null/undefined checks
             x: shape.x !== undefined ? shape.x : 0,
             y: shape.y !== undefined ? shape.y : 0,
           };
+          
+          // Ensure layerId is set
+          if (!processedShape.layerId) {
+            // Find a layer for this page
+            const layer = layers.value.find(l => l.pageId === page.id);
+            if (layer) {
+              processedShape.layerId = layer.id;
+            } else {
+              // If no layer exists for this page, use the first layer
+              processedShape.layerId = layers.value.length > 0 ? layers.value[0].id : 'layer-0';
+            }
+          }
           
           // Special handling for width/height based on shape type
           if (['pen', 'line', 'arrow'].includes(shape.type)) {
@@ -2385,9 +3245,11 @@ function setActiveTab(tab) {
           processedShape.movable = shape.movable !== false; // Default to true unless explicitly set to false
           processedShape.rotation = shape.rotation || 0;
           
-          // Ensure fill and stroke have valid values
-          processedShape.fill = (shape.fill && shape.fill !== '') ? shape.fill : '#3B82F6'; // Default blue if empty
-          processedShape.stroke = (shape.stroke && shape.stroke !== '') ? shape.stroke : '#000000'; // Default black if empty
+          // Ensure fill and stroke have valid values (except for images)
+          if (shape.type !== 'image') {
+            processedShape.fill = (shape.fill && shape.fill !== '') ? shape.fill : '#3B82F6'; // Default blue if empty
+            processedShape.stroke = (shape.stroke && shape.stroke !== '') ? shape.stroke : '#000000'; // Default black if empty
+          }
           
           // Special handling for image shapes
           if (shape.type === 'image') {
@@ -2405,15 +3267,88 @@ function setActiveTab(tab) {
             }
           }
           
-          // Check if we already have a shape with this ID
-          if (idMap.has(processedShape.id)) {
-            console.warn(`Duplicate shape ID found: ${processedShape.id}. Using the most recent one.`);
-            // Replace the existing shape with this one (assuming it's more recent)
-            idMap.set(processedShape.id, processedShape);
-          } else {
-            // Add this shape to our map
-            idMap.set(processedShape.id, processedShape);
+          // Add this shape to our map (overwriting any existing shape with the same ID)
+          idMap.set(processedShape.id, processedShape);
+        });
+      }
+    });
+    
+    // Now, collect shapes from all layers
+    layers.value.forEach(layer => {
+      if (!layer.shapes) {
+        layer.shapes = [];
+      }
+      
+      if (Array.isArray(layer.shapes)) {
+        console.log(`Processing ${layer.shapes.length} shapes from layer ${layer.id} (${layer.name})`);
+        
+        // Filter out invalid shapes and 'select' type shapes
+        const validLayerShapes = layer.shapes.filter(shape => 
+          shape && 
+          typeof shape === 'object' && 
+          shape.type && 
+          shape.type !== 'select' && 
+          shape.id && // Must have an ID
+          !idMap.has(shape.id) // Only process shapes not already in the map
+        );
+        
+        // Process each valid shape
+        validLayerShapes.forEach(shape => {
+          // Create a processed shape with all required properties
+          const processedShape = {
+            ...shape,
+            id: shape.id, // Preserve the original ID
+            layerId: layer.id, // Ensure layer ID is set to this layer
+            // Handle coordinates and dimensions with proper null/undefined checks
+            x: shape.x !== undefined ? shape.x : 0,
+            y: shape.y !== undefined ? shape.y : 0,
+          };
+          
+          // Ensure pageId is set
+          if (!processedShape.pageId) {
+            processedShape.pageId = layer.pageId || currentPageId;
           }
+          
+          // Special handling for width/height based on shape type
+          if (['pen', 'line', 'arrow'].includes(shape.type)) {
+            // These shapes can have any width/height
+            processedShape.width = shape.width;
+            processedShape.height = shape.height;
+          } else {
+            // Other shapes need default values if not set
+            processedShape.width = shape.width !== undefined ? shape.width : 100;
+            processedShape.height = shape.height !== undefined ? shape.height : 100;
+          }
+          
+          // Ensure these properties are set for proper interaction
+          processedShape.selectable = shape.selectable !== false; // Default to true unless explicitly set to false
+          processedShape.movable = shape.movable !== false; // Default to true unless explicitly set to false
+          processedShape.rotation = shape.rotation || 0;
+          
+          // Ensure fill and stroke have valid values (except for images)
+          if (shape.type !== 'image') {
+            processedShape.fill = (shape.fill && shape.fill !== '') ? shape.fill : '#3B82F6'; // Default blue if empty
+            processedShape.stroke = (shape.stroke && shape.stroke !== '') ? shape.stroke : '#000000'; // Default black if empty
+          }
+          
+          // Special handling for image shapes
+          if (shape.type === 'image') {
+            // Preserve the image object if it's valid
+            if (shape.image instanceof HTMLImageElement) {
+              processedShape.image = shape.image;
+            } 
+            // If we have a src but no valid image, create a new one
+            else if (shape.src && (!shape.image || !(shape.image instanceof HTMLImageElement))) {
+              const img = new Image();
+              img.src = shape.src;
+              processedShape.image = img;
+              processedShape.isLoading = true;
+              processedShape.imageError = null;
+            }
+          }
+          
+          // Add this shape to our map
+          idMap.set(processedShape.id, processedShape);
         });
       }
     });
@@ -2422,7 +3357,7 @@ function setActiveTab(tab) {
     allShapes = Array.from(idMap.values());
     
     // Log the result
-    console.log('getAllShapes found', allShapes.length, 'shapes across all layers');
+    console.log('getAllShapes found', allShapes.length, 'shapes across all pages and layers');
     
     return allShapes;
   }
@@ -2593,15 +3528,26 @@ function setActiveTab(tab) {
   function initAutoSave() {
     if (!autoSaveEnabled.value) return;
     if (autoSaveTimer.value) clearInterval(autoSaveTimer.value);
+    
+    // Always ensure auto-save messages are disabled
+    autoSaveStatus.value = null;
+    autoSaveMessage.value = '';
+    
+    // Set up the auto-save timer without showing any messages
     autoSaveTimer.value = setInterval(() => {
       if (documentModified.value) performAutoSave();
     }, autoSaveInterval.value);
+    
+    console.log('Auto-save initialized silently');
   }
 
   function performAutoSave() {
+    // Perform auto-save silently without showing any messages
     try {
-      autoSaveStatus.value = 'saving';
-      autoSaveMessage.value = 'Saving...';
+      // Don't set any status or message - keep them null/empty
+      autoSaveStatus.value = null;
+      autoSaveMessage.value = '';
+      
       const saveData = {
         version: appVersion.value,
         timestamp: new Date().toISOString(),
@@ -2617,24 +3563,19 @@ function setActiveTab(tab) {
         snapToGrid: snapToGrid.value,
         snapToObjects: snapToObjects.value,
       };
+      
+      // Save to localStorage silently
       localStorage.setItem(
         localStorageKey.value + (documentName.value || 'untitled').replace(/\s+/g, '_').toLowerCase(),
         JSON.stringify(saveData)
       );
+      
+      // Update the timestamp but don't show any message
       lastAutoSave.value = new Date();
-      autoSaveStatus.value = 'saved';
-      autoSaveMessage.value = `Saved at ${lastAutoSave.value.toLocaleTimeString()}`;
-      setTimeout(() => {
-        autoSaveStatus.value = null;
-        autoSaveMessage.value = '';
-      }, 3000);
+      console.log('Auto-save completed silently at', lastAutoSave.value);
     } catch (error) {
-      autoSaveStatus.value = 'error';
-      autoSaveMessage.value = 'Save failed!';
-      setTimeout(() => {
-        autoSaveStatus.value = null;
-        autoSaveMessage.value = '';
-      }, 5000);
+      console.error('Auto-save failed:', error);
+      // Don't show any error messages in the UI
     }
   }
 
@@ -2819,6 +3760,7 @@ function setActiveTab(tab) {
     showRenameDialog,
     renameData,
     showAddPageDialog,
+    pageDialogInitialData,
     showPageManagerDialog,
     showCalculator,
     calculatorPosition,
@@ -2917,6 +3859,7 @@ function setActiveTab(tab) {
     endDragPageTabs,
     showPageContextMenu,
     closeContextMenu,
+    toggleAddPageDialog,
     toggleCalculator,
     toggleColorPicker,
     applySelectedColor,
@@ -2924,6 +3867,7 @@ function setActiveTab(tab) {
     applyPartProperties,
     toggleBOMGenerator,
     toggleKeyboardShortcuts,
+    togglePartSelector,
     handleShapeDragStart,
     handleAddShape,
     handleCanvasDrop,
@@ -2939,6 +3883,7 @@ function setActiveTab(tab) {
     exportAsJSON,
     importFile,
     getAllShapes,
+    synchronizeShapes,
     saveToHistory,
     undo,
     redo,

@@ -171,8 +171,165 @@ export default {
     show(newVal) {
       if (newVal) {
         // Initialize with provided properties
-        this.localProperties = { ...this.initialProperties };
+        console.log('PartPropertiesDialog show changed to true, initialProperties:', this.initialProperties);
+        
+        try {
+          // Create a deep copy with default values for missing properties
+          const props = JSON.parse(JSON.stringify(this.initialProperties || {}));
+          
+          // Log the properties for debugging
+          console.log('Properties after JSON parse in show watcher:', props);
+          
+          // Check if we have a direct database part object with PascalCase properties
+          if (props.PartNumber || props.Description || props.Manufacturer || props.ItemNumber) {
+            console.log('PartPropertiesDialog show watcher detected database part object format');
+            
+            this.localProperties = {
+              name: props.Description || props.name || '',
+              haystackTag: props.haystackTag || `{id:${props.ItemNumber || 'unknown'}, ${(props.Class || 'part').toLowerCase()}:true}`,
+              partNumber: props.PartNumber || props.partNumber || '',
+              manufacturer: props.Manufacturer || props.manufacturer || '',
+              quantity: typeof props.quantity === 'number' ? props.quantity : 1,
+              description: props.description || `${props.Class || ''} - ${props.SubClass || ''}`,
+              pointType: props.pointType || '',
+              pdfPath: props.ProductCut || props.pdfPath || ''
+            };
+          } 
+          // Check if we have an _originalPart property
+          else if (props._originalPart) {
+            console.log('PartPropertiesDialog show watcher detected _originalPart property:', props._originalPart);
+            
+            const originalPart = props._originalPart;
+            
+            this.localProperties = {
+              name: originalPart.Description || originalPart.name || '',
+              haystackTag: originalPart.haystackTag || `{id:${originalPart.ItemNumber || 'unknown'}, ${(originalPart.Class || 'part').toLowerCase()}:true}`,
+              partNumber: originalPart.PartNumber || originalPart.partNumber || '',
+              manufacturer: originalPart.Manufacturer || originalPart.manufacturer || '',
+              quantity: typeof originalPart.quantity === 'number' ? originalPart.quantity : 1,
+              description: originalPart.description || `${originalPart.Class || ''} - ${originalPart.SubClass || ''}`,
+              pointType: originalPart.pointType || '',
+              pdfPath: originalPart.ProductCut || originalPart.pdfPath || ''
+            };
+          }
+          // Standard format with camelCase properties
+          else {
+            this.localProperties = {
+              name: props.name || '',
+              haystackTag: props.haystackTag || '',
+              partNumber: props.partNumber || '',
+              manufacturer: props.manufacturer || '',
+              quantity: props.quantity || 1,
+              description: props.description || '',
+              pointType: props.pointType || '',
+              pdfPath: props.pdfPath || ''
+            };
+          }
+          
+          // Format the Haystack tag if it's an object
+          if (typeof this.localProperties.haystackTag === 'object') {
+            try {
+              // Convert to a formatted JSON string
+              this.localProperties.haystackTag = JSON.stringify(this.localProperties.haystackTag, null, 2);
+            } catch (e) {
+              console.warn('Error formatting Haystack tag:', e);
+              this.localProperties.haystackTag = '';
+            }
+          }
+          
+          console.log('PartPropertiesDialog opened with properties:', this.localProperties);
+        } catch (error) {
+          console.error('Error initializing properties:', error);
+          // Set default values if there's an error
+          this.localProperties = {
+            name: '',
+            haystackTag: '',
+            partNumber: '',
+            manufacturer: '',
+            quantity: 1,
+            description: '',
+            pointType: '',
+            pdfPath: ''
+          };
+        }
       }
+    },
+    initialProperties: {
+      handler(newVal) {
+        if (this.show && newVal) {
+          console.log('PartPropertiesDialog initialProperties changed:', newVal);
+          
+          try {
+            // Create a deep copy with default values for missing properties
+            const props = JSON.parse(JSON.stringify(newVal || {}));
+            
+            // Log the properties for debugging
+            console.log('Properties after JSON parse in initialProperties watcher:', props);
+            
+            // Check if we have a direct database part object with PascalCase properties
+            if (props.PartNumber || props.Description || props.Manufacturer || props.ItemNumber) {
+              console.log('PartPropertiesDialog detected database part object format');
+              
+              this.localProperties = {
+                name: props.Description || props.name || '',
+                haystackTag: props.haystackTag || `{id:${props.ItemNumber || 'unknown'}, ${(props.Class || 'part').toLowerCase()}:true}`,
+                partNumber: props.PartNumber || props.partNumber || '',
+                manufacturer: props.Manufacturer || props.manufacturer || '',
+                quantity: typeof props.quantity === 'number' ? props.quantity : 1,
+                description: props.description || `${props.Class || ''} - ${props.SubClass || ''}`,
+                pointType: props.pointType || '',
+                pdfPath: props.ProductCut || props.pdfPath || ''
+              };
+            } 
+            // Check if we have an _originalPart property
+            else if (props._originalPart) {
+              console.log('PartPropertiesDialog detected _originalPart property:', props._originalPart);
+              
+              const originalPart = props._originalPart;
+              
+              this.localProperties = {
+                name: originalPart.Description || originalPart.name || '',
+                haystackTag: originalPart.haystackTag || `{id:${originalPart.ItemNumber || 'unknown'}, ${(originalPart.Class || 'part').toLowerCase()}:true}`,
+                partNumber: originalPart.PartNumber || originalPart.partNumber || '',
+                manufacturer: originalPart.Manufacturer || originalPart.manufacturer || '',
+                quantity: typeof originalPart.quantity === 'number' ? originalPart.quantity : 1,
+                description: originalPart.description || `${originalPart.Class || ''} - ${originalPart.SubClass || ''}`,
+                pointType: originalPart.pointType || '',
+                pdfPath: originalPart.ProductCut || originalPart.pdfPath || ''
+              };
+            }
+            // Standard format with camelCase properties
+            else {
+              this.localProperties = {
+                name: props.name || '',
+                haystackTag: props.haystackTag || '',
+                partNumber: props.partNumber || '',
+                manufacturer: props.manufacturer || '',
+                quantity: props.quantity || 1,
+                description: props.description || '',
+                pointType: props.pointType || '',
+                pdfPath: props.pdfPath || ''
+              };
+            }
+            
+            // Format the Haystack tag if it's an object
+            if (typeof this.localProperties.haystackTag === 'object') {
+              try {
+                // Convert to a formatted JSON string
+                this.localProperties.haystackTag = JSON.stringify(this.localProperties.haystackTag, null, 2);
+              } catch (e) {
+                console.warn('Error formatting Haystack tag:', e);
+                this.localProperties.haystackTag = '';
+              }
+            }
+            
+            console.log('PartPropertiesDialog initialProperties updated:', this.localProperties);
+          } catch (error) {
+            console.error('Error updating properties:', error);
+          }
+        }
+      },
+      deep: true
     }
   },
   methods: {
@@ -197,26 +354,148 @@ export default {
     },
     
     selectPartFromDatabase(partProperties) {
-      // Make a copy of the part properties
-      const properties = { ...partProperties };
+      console.log('Selected part from database:', partProperties);
       
-      // Format the Haystack tag if it's an object
-      if (typeof properties.haystackTag === 'object') {
-        try {
-          // Convert to a formatted JSON string
-          properties.haystackTag = JSON.stringify(properties.haystackTag, null, 2);
-        } catch (e) {
-          console.warn('Error formatting Haystack tag:', e);
+      try {
+        // Make a deep copy of the part properties
+        const properties = JSON.parse(JSON.stringify(partProperties || {}));
+        
+        // Log the properties for debugging
+        console.log('Properties after JSON parse:', JSON.stringify(properties, null, 2));
+        
+        // Check if we have a direct database part object with PascalCase properties
+        if (properties.PartNumber || properties.Description || properties.Manufacturer || properties.ItemNumber) {
+          console.log('selectPartFromDatabase detected database part object format with PascalCase properties');
+          
+          // Create a properly formatted part properties object
+          const formattedProperties = {
+            name: properties.Description || properties.name || 'Unnamed Part',
+            haystackTag: properties.haystackTag || `{id:${properties.ItemNumber || 'unknown'}, ${(properties.Class || 'part').toLowerCase()}:true}`,
+            partNumber: properties.PartNumber || properties.partNumber || '',
+            manufacturer: properties.Manufacturer || properties.manufacturer || '',
+            quantity: typeof properties.quantity === 'number' ? properties.quantity : 1,
+            description: properties.description || `${properties.Class || ''} - ${properties.SubClass || ''}`,
+            pointType: properties.pointType || '',
+            pdfPath: properties.ProductCut || properties.pdfPath || '',
+            
+            // Preserve the original part data
+            _originalPart: properties
+          };
+          
+          // Format the Haystack tag if it's an object
+          if (typeof formattedProperties.haystackTag === 'object') {
+            try {
+              // Convert to a formatted JSON string
+              formattedProperties.haystackTag = JSON.stringify(formattedProperties.haystackTag, null, 2);
+            } catch (e) {
+              console.warn('Error formatting Haystack tag:', e);
+              formattedProperties.haystackTag = '';
+            }
+          }
+          
+          console.log('Processed database part properties:', JSON.stringify(formattedProperties, null, 2));
+          
+          // Update local properties with the formatted properties
+          this.localProperties = { ...formattedProperties };
         }
+        // Check if we have an _originalPart property
+        else if (properties._originalPart) {
+          console.log('selectPartFromDatabase detected _originalPart property:', JSON.stringify(properties._originalPart, null, 2));
+          
+          const originalPart = properties._originalPart;
+          
+          // Create a properly formatted part properties object from the original part
+          const formattedProperties = {
+            name: originalPart.Description || originalPart.name || 'Unnamed Part',
+            haystackTag: originalPart.haystackTag || `{id:${originalPart.ItemNumber || 'unknown'}, ${(originalPart.Class || 'part').toLowerCase()}:true}`,
+            partNumber: originalPart.PartNumber || originalPart.partNumber || '',
+            manufacturer: originalPart.Manufacturer || originalPart.manufacturer || '',
+            quantity: typeof originalPart.quantity === 'number' ? originalPart.quantity : 1,
+            description: originalPart.description || `${originalPart.Class || ''} - ${originalPart.SubClass || ''}`,
+            pointType: originalPart.pointType || '',
+            pdfPath: originalPart.ProductCut || originalPart.pdfPath || '',
+            
+            // Preserve the original part data
+            _originalPart: originalPart
+          };
+          
+          // Format the Haystack tag if it's an object
+          if (typeof formattedProperties.haystackTag === 'object') {
+            try {
+              // Convert to a formatted JSON string
+              formattedProperties.haystackTag = JSON.stringify(formattedProperties.haystackTag, null, 2);
+            } catch (e) {
+              console.warn('Error formatting Haystack tag:', e);
+              formattedProperties.haystackTag = '';
+            }
+          }
+          
+          console.log('Processed original part properties:', JSON.stringify(formattedProperties, null, 2));
+          
+          // Update local properties with the formatted properties
+          this.localProperties = { ...formattedProperties };
+        }
+        // Standard format with camelCase properties
+        else {
+          console.log('selectPartFromDatabase detected standard part object format with camelCase properties');
+          
+          // Create a properly formatted part properties object
+          const formattedProperties = {
+            name: properties.name || properties.Description || 'Unnamed Part',
+            haystackTag: properties.haystackTag || '',
+            partNumber: properties.partNumber || properties.PartNumber || '',
+            manufacturer: properties.manufacturer || properties.Manufacturer || '',
+            quantity: typeof properties.quantity === 'number' ? properties.quantity : 1,
+            description: properties.description || properties.Description || '',
+            pointType: properties.pointType || '',
+            pdfPath: properties.pdfPath || properties.ProductCut || '',
+            
+            // Preserve the original part data
+            _originalPart: properties
+          };
+          
+          // Format the Haystack tag if it's an object
+          if (typeof formattedProperties.haystackTag === 'object') {
+            try {
+              // Convert to a formatted JSON string
+              formattedProperties.haystackTag = JSON.stringify(formattedProperties.haystackTag, null, 2);
+            } catch (e) {
+              console.warn('Error formatting Haystack tag:', e);
+              formattedProperties.haystackTag = '';
+            }
+          }
+          
+          console.log('Processed standard part properties:', JSON.stringify(formattedProperties, null, 2));
+          
+          // Update local properties with the formatted properties
+          this.localProperties = { ...formattedProperties };
+        }
+        
+        // Force a UI update
+        this.$nextTick(() => {
+          console.log('UI updated with new properties:', this.localProperties);
+          
+          // Add additional debugging to verify the properties are set correctly
+          console.log('Local properties after nextTick:', JSON.stringify(this.localProperties, null, 2));
+        });
+        
+        this.showPartSelector = false;
+      } catch (error) {
+        console.error('Error processing part from database:', error);
+        
+        // Set default values if there's an error
+        this.localProperties = {
+          name: 'Unnamed Part',
+          haystackTag: '',
+          partNumber: '',
+          manufacturer: '',
+          quantity: 1,
+          description: '',
+          pointType: '',
+          pdfPath: '',
+          _originalPart: partProperties || {} // Still preserve the original properties
+        };
       }
-      
-      // Ensure manufacturer is included
-      if (!properties.manufacturer) {
-        properties.manufacturer = '';
-      }
-      
-      this.localProperties = properties;
-      this.showPartSelector = false;
     },
     
     cancel() {
@@ -224,7 +503,23 @@ export default {
     },
     
     confirm() {
-      this.$emit('confirm', { ...this.localProperties });
+      try {
+        // Create a deep copy of the properties to ensure they're not modified by reference
+        const properties = JSON.parse(JSON.stringify(this.localProperties));
+        console.log('Confirming part properties:', properties);
+        
+        // Ensure all required properties are present
+        if (!properties.name) properties.name = 'Unnamed Part';
+        if (!properties.quantity) properties.quantity = 1;
+        
+        // Emit the confirm event with the properties
+        this.$emit('confirm', properties);
+        
+        // Log success message
+        console.log('Part properties confirmed and emitted');
+      } catch (error) {
+        console.error('Error confirming part properties:', error);
+      }
     }
   }
 };

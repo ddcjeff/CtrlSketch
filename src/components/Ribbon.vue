@@ -145,6 +145,13 @@
           <!-- Tools Section -->
           <div class="bg-gray-900 rounded-lg p-2 min-w-[250px]">
             <h3 class="text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Tools</h3>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-gray-300">Keep Tool Active</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" v-model="$root.$data.keepToolActive" class="sr-only peer">
+                <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
             <div class="flex gap-1 nowrap">
               <button 
                 class="flex items-center px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-md transition-colors duration-200 tooltip-container"
@@ -604,6 +611,9 @@ export default {
       const savedPinState = localStorage.getItem('pageSelectorPinned');
       if (savedPinState === 'true') {
         this.isPinned = true;
+        // If it was pinned, also show the page selector
+        this.showPageSelector = true;
+        console.log('Page selector restored as pinned and visible');
       }
     } catch (e) {
       console.error('Failed to restore pin state from localStorage:', e);
@@ -707,6 +717,12 @@ export default {
       // Store the pin state in localStorage for persistence
       try {
         localStorage.setItem('pageSelectorPinned', this.isPinned ? 'true' : 'false');
+        console.log('Page selector pin state saved:', this.isPinned);
+        
+        // If pinned, also set showPageSelector to true to ensure it stays open
+        if (this.isPinned) {
+          this.showPageSelector = true;
+        }
       } catch (e) {
         console.error('Failed to save pin state to localStorage:', e);
       }

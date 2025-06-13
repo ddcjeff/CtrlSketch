@@ -91,7 +91,13 @@ export default {
       this.selectedCategory = category;
     },
     selectPart(partProperties) {
-      this.$emit('select', partProperties);
+      console.log('PartsBrowser selectPart called with:', partProperties);
+      
+      // Make a deep copy to avoid reference issues
+      const partToEmit = JSON.parse(JSON.stringify(partProperties));
+      
+      console.log('PartsBrowser emitting part:', partToEmit);
+      this.$emit('select', partToEmit);
       this.$emit('close');
     }
   }

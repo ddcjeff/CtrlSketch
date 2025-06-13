@@ -64,12 +64,87 @@ export default {
   },
   methods: {
     selectPartFromBrowser(partProperties) {
-      this.selectedPart = partProperties;
+      console.log('PartSelector received part from browser:', partProperties);
+      
+      try {
+        // Make a deep copy to avoid reference issues
+        this.selectedPart = JSON.parse(JSON.stringify(partProperties));
+        console.log('PartSelector stored selectedPart:', this.selectedPart);
+      } catch (error) {
+        console.error('Error in selectPartFromBrowser:', error);
+        this.selectedPart = partProperties; // Use as-is if JSON parsing fails
+      }
     },
     confirmSelection() {
       if (this.selectedPart) {
-        this.$emit('select', this.selectedPart);
-        this.$emit('close');
+        console.log('PartSelector confirming selection:', this.selectedPart);
+        
+        try {
+          // Make a deep copy to avoid reference issues
+          const partToEmit = JSON.parse(JSON.stringify(this.selectedPart));
+          
+          // Ensure both camelCase and PascalCase properties are present
+          if (partToEmit.Description && !partToEmit.name) {
+            partToEmit.name = partToEmit.Description;
+          }
+          if (partToEmit.name && !partToEmit.Description) {
+            partToEmit.Description = partToEmit.name;
+          }
+          
+          if (partToEmit.PartNumber && !partToEmit.partNumber) {
+            partToEmit.partNumber = partToEmit.PartNumber;
+          }
+          if (partToEmit.partNumber && !partToEmit.PartNumber) {
+            partToEmit.PartNumber = partToEmit.partNumber;
+          }
+          
+          if (partToEmit.Manufacturer && !partToEmit.manufacturer) {
+            partToEmit.manufacturer = partToEmit.Manufacturer;
+          }
+          if (partToEmit.manufacturer && !partToEmit.Manufacturer) {
+            partToEmit.Manufacturer = partToEmit.manufacturer;
+          }
+          
+          // Ensure haystackTag is present
+          if (partToEmit.HaystackTag && !partToEmit.haystackTag) {
+            partToEmit.haystackTag = partToEmit.HaystackTag;
+          }
+          if (partToEmit.haystackTag && !partToEmit.HaystackTag) {
+            partToEmit.HaystackTag = partToEmit.haystackTag;
+          }
+          
+          // If no haystackTag, create one
+          if (!partToEmit.haystackTag) {
+            partToEmit.haystackTag = `{id:${partToEmit.ItemNumber || 'unknown'}, ${(partToEmit.Class || 'part').toLowerCase()}:true}`;
+          }
+          
+          // Ensure pdfPath is present
+          if (partToEmit.ProductCut && !partToEmit.pdfPath) {
+            partToEmit.pdfPath = partToEmit.ProductCut;
+          }
+          if (partToEmit.pdfPath && !partToEmit.ProductCut) {
+            partToEmit.ProductCut = partToEmit.pdfPath;
+          }
+          
+          // Add quantity if missing
+          if (!partToEmit.quantity) {
+            partToEmit.quantity = 1;
+          }
+          
+          // Add pointType if missing
+          if (!partToEmit.pointType) {
+            partToEmit.pointType = '';
+          }
+          
+          console.log('PartSelector emitting part with all required properties:', partToEmit);
+          this.$emit('select', partToEmit);
+          this.$emit('close');
+        } catch (error) {
+          console.error('Error in confirmSelection:', error);
+          // Emit the part as-is if JSON parsing fails
+          this.$emit('select', this.selectedPart);
+          this.$emit('close');
+        }
       }
     }
   }

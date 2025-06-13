@@ -1,6 +1,29 @@
 <!-- src/components/PageManager.vue -->
 <template>
-  <div class="page-manager" :class="{ 'dark-theme': isDarkTheme, 'vertical': tabPosition === 'right' }">
+  <div 
+    class="page-manager" 
+    :class="{ 
+      'dark-theme': isDarkTheme, 
+      'vertical': tabPosition === 'right',
+      'pinned': isPinned,
+      'draggable': !isPinned
+    }"
+    :style="positionStyle"
+    @mousedown="startDrag"
+  >
+    <div class="page-manager-header">
+      <div class="drag-handle" @mousedown.stop="startDrag">
+        <span class="drag-icon">≡</span>
+      </div>
+      <div class="position-controls">
+        <button class="position-btn" @click="togglePin" :title="isPinned ? 'Unpin' : 'Pin'">
+          <span class="pin-icon">{{ isPinned ? '📌' : '📍' }}</span>
+        </button>
+        <button class="position-btn" @click="resetPosition" title="Reset Position">
+          <span class="reset-icon">↺</span>
+        </button>
+      </div>
+    </div>
     <div class="page-tabs" :class="{ 'vertical-tabs': tabPosition === 'right', 'inline-tabs': tabPosition !== 'right' }">
       <div
         v-for="page in pages"
@@ -113,6 +136,23 @@ export default {
       renameData: {
         id: '',
         name: ''
+      },
+      // Draggable position properties
+      position: {
+        x: 10,
+        y: 10
+      },
+      isDragging: false,
+      dragOffset: {
+        x: 0,
+        y: 0
+      },
+      isPinned: false,
+      savedPositions: {
+        top: { x: 10, y: 10 },
+        right: { x: window.innerWidth - 200, y: 10 },
+        bottom: { x: 10, y: window.innerHeight - 100 },
+        left: { x: 10, y: 10 }
       }
     };
   },
@@ -136,6 +176,14 @@ export default {
       }
       
       return activePageShapes;
+    },
+    positionStyle() {
+      return {
+        position: 'absolute',
+        top: `${this.position.y}px`,
+        left: `${this.position.x}px`,
+        zIndex: 1000
+      };
     }
   },
   mounted() {
@@ -143,15 +191,29 @@ export default {
     document.addEventListener('click', this.closeContextMenu);
     document.addEventListener('keydown', this.handleKeyDown);
     
+    // Add drag event listeners
+    document.addEventListener('mousemove', this.onDrag);
+    document.addEventListener('mouseup', this.stopDrag);
+    window.addEventListener('resize', this.handleResize);
+    
     // Initialize active page if pages exist
     if (this.pages.length > 0 && !this.activePageId) {
       this.activePageId = this.pages[0].id;
       this.$emit('active-page-changed', this.activePage);
     }
+    
+    // Set initial position based on tab position
+    this.setPositionForTabPosition();
+    
+    // Load saved position if available
+    this.loadSavedPosition();
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeContextMenu);
     document.removeEventListener('keydown', this.handleKeyDown);
+    document.removeEventListener('mousemove', this.onDrag);
+    document.removeEventListener('mouseup', this.stopDrag);
+    window.removeEventListener('resize', this.handleResize);
   },
   watch: {
     pages: {
@@ -167,6 +229,93 @@ export default {
     }
   },
   methods: {
+    // Draggable methods
+    startDrag(event) {
+      if (this.isPinned) return;
+      
+      this.isDragging = true;
+      this.dragOffset = {
+        x: event.clientX - this.position.x,
+        y: event.clientY - this.position.y
+      };
+      
+      // Prevent text selection during drag
+      event.preventDefault();
+    },
+    
+    onDrag(event) {
+      if (!this.isDragging) return;
+      
+      // Calculate new position
+      const newX = event.clientX - this.dragOffset.x;
+      const newY = event.clientY - this.dragOffset.y;
+      
+      // Apply constraints to keep within window
+      this.position = {
+        x: Math.max(0, Math.min(window.innerWidth - 200, newX)),
+        y: Math.max(0, Math.min(window.innerHeight - 100, newY))
+      };
+      
+      // Save position to localStorage
+      this.savePosition();
+    },
+    
+    stopDrag() {
+      this.isDragging = false;
+    },
+    
+    togglePin() {
+      this.isPinned = !this.isPinned;
+      localStorage.setItem('pageManagerPinned', this.isPinned.toString());
+    },
+    
+    resetPosition() {
+      this.setPositionForTabPosition();
+      this.savePosition();
+    },
+    
+    setPositionForTabPosition() {
+      // Set position based on tab position
+      if (this.tabPosition === 'right') {
+        this.position = { ...this.savedPositions.right };
+      } else if (this.tabPosition === 'bottom') {
+        this.position = { ...this.savedPositions.bottom };
+      } else {
+        this.position = { ...this.savedPositions.top };
+      }
+    },
+    
+    savePosition() {
+      localStorage.setItem('pageManagerPosition', JSON.stringify(this.position));
+    },
+    
+    loadSavedPosition() {
+      // Load position from localStorage
+      const savedPosition = localStorage.getItem('pageManagerPosition');
+      if (savedPosition) {
+        try {
+          this.position = JSON.parse(savedPosition);
+        } catch (e) {
+          console.error('Error loading saved position:', e);
+        }
+      }
+      
+      // Load pinned state
+      const isPinned = localStorage.getItem('pageManagerPinned');
+      if (isPinned !== null) {
+        this.isPinned = isPinned === 'true';
+      }
+    },
+    
+    handleResize() {
+      // Ensure the page manager stays within the window after resize
+      this.position = {
+        x: Math.min(window.innerWidth - 200, this.position.x),
+        y: Math.min(window.innerHeight - 100, this.position.y)
+      };
+      this.savePosition();
+    },
+    
     addPage() {
       this.newPageData = {
         name: `Page ${this.pages.length + 1}`,
@@ -320,9 +469,55 @@ export default {
   display: flex;
   flex-direction: column;
   font-family: 'Segoe UI', Arial, sans-serif;
+  background: rgba(30, 30, 30, 0.9);
+  border-radius: 4px;
+  border: 1px solid #4A4A4A;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+.page-manager.draggable {
+  cursor: move;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+.page-manager.pinned {
+  cursor: default;
 }
 .page-manager.vertical {
   flex-direction: row;
+}
+.page-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background: #2D2D2D;
+  border-bottom: 1px solid #4A4A4A;
+}
+.drag-handle {
+  cursor: move;
+  padding: 2px 4px;
+  color: #AAAAAA;
+  font-size: 14px;
+}
+.position-controls {
+  display: flex;
+  gap: 4px;
+}
+.position-btn {
+  background: none;
+  border: none;
+  color: #AAAAAA;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+.position-btn:hover {
+  color: #FFFFFF;
 }
 .page-tabs {
   display: flex;

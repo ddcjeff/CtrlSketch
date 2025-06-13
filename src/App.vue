@@ -90,7 +90,6 @@
             @shape-updated="handleShapeUpdated"
             @shape-deleted="handleShapeDeleted"
             @import-file="store.importFile"
-            @add-shape="handleShapeAdded"
             @shapes-selected="store.selectShapes($event.map(s => s.id))"
             @undo-requested="store.undo"
             @redo-requested="store.redo"
@@ -150,7 +149,7 @@
                 <span v-if="page.type === 'background'" class="ml-1 text-xs bg-blue-800 px-1 rounded">BG</span>
               </div>
               <button
-                @click="store.showAddPageDialog = true"
+                @click="store.toggleAddPageDialog()"
                 class="px-3 py-2 bg-gray-800 text-white rounded-md cursor-pointer hover:bg-gray-700 text-center font-bold"
               >
                 + Add Page
@@ -254,7 +253,7 @@
     <!-- Parts Plus Browser -->
     <PartSelector
       v-if="store.showPartSelector"
-      @close="store.showPartSelector = false"
+      @close="store.togglePartSelector()"
       @select="handlePartSelection"
     />
 
@@ -277,11 +276,11 @@
     <!-- Add Page Dialog -->
     <AddPageDialog
       :show="store.showAddPageDialog"
-      :initial-data="{ name: 'New Page', type: 'foreground', backgroundPageId: '', description: '', drawingType: 'default' }"
+      :initial-data="store.pageDialogInitialData"
       :background-pages="store.pages.filter((page) => page.type === 'background')"
       :is-dark-theme="false"
-      @close="store.showAddPageDialog = false"
-      @add="store.addPage"
+      @close="closeAddPageDialog"
+      @add="handleAddPage"
     />
 
     <!-- Page Manager Dialog -->
@@ -295,6 +294,16 @@
       @update-page="store.updatePage"
       @move-page="store.movePage"
       @delete-page="store.deletePage"
+    />
+    
+    <!-- Draggable Page Manager -->
+    <PageManager
+      :pages="store.pages"
+      :active-page-id="store.activePageId"
+      :is-dark-theme="false"
+      :tab-position="'right'"
+      @active-page-changed="handlePageChange"
+      @pages-updated="handlePagesUpdated"
     />
 
     <!-- Rename Page Dialog -->
@@ -347,6 +356,7 @@ import StylePanel from './components/StylePanel.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import NotificationManager from './components/NotificationManager.vue';
 import PageManagerDialog from './components/PageManagerDialog.vue';
+import PageManager from './components/PageManager.vue';
 import AddPageDialog from './components/AddPageDialog.vue';
 import Calculator from './components/Calculator.vue';
 import ColorPicker from './components/ColorPicker.vue';
@@ -367,6 +377,7 @@ export default {
     SplashScreen,
     NotificationManager,
     PageManagerDialog,
+    PageManager,
     AddPageDialog,
     Calculator,
     ColorPicker,
@@ -381,7 +392,8 @@ export default {
     return {
       shapes: [],
       activeLayer: { id: 'default', name: 'Default', visible: true, frozen: false },
-      visibleLayers: [{ id: 'default', visible: true, frozen: false, opacity: 100 }]
+      visibleLayers: [{ id: 'default', visible: true, frozen: false, opacity: 100 }],
+      keepToolActive: true // Flag to keep the current drawing tool active after drawing a shape
     };
   },
   setup() {
@@ -486,11 +498,46 @@ export default {
     if (this.store.autoSaveTimer) clearInterval(this.store.autoSaveTimer);
   },
   methods: {
+    closeAddPageDialog() {
+      // Force close the dialog
+      this.store.showAddPageDialog = false;
+    },
+    
+    handleAddPage(pageData) {
+      console.log('Handling add page with data:', pageData);
+      try {
+        // Add the page
+        const newPageId = this.store.addPage(pageData);
+        console.log('New page added with ID:', newPageId);
+        
+        // Keep the dialog open - don't close it
+        // this.store.showAddPageDialog = false;
+        
+        // Show a success notification
+        this.showNotification({
+          type: 'success',
+          message: 'Page added successfully',
+          details: `Page "${pageData.name}" has been added.`,
+          duration: 3000
+        });
+      } catch (error) {
+        console.error('Error adding page:', error);
+        
+        // Show an error notification
+        this.showNotification({
+          type: 'error',
+          message: 'Error adding page',
+          details: error.message || 'An unknown error occurred',
+          duration: 5000
+        });
+      }
+    },
+    
     handleMenuAction({ type, value }) {
-  console.log('Menu action:', type, value);
-  if (type === 'tab') {
-    this.store.setActiveTab(value);
-  } else if (type === 'file') {
+      console.log('Menu action:', type, value);
+      if (type === 'tab') {
+        this.store.setActiveTab(value);
+      } else if (type === 'file') {
     // Map menu action values to the correct function names
     const functionMap = {
       'new': 'clearCanvas',
@@ -752,24 +799,127 @@ export default {
     },
     
     togglePartsPlusBrowser() {
-      this.store.showPartSelector = true;
+      this.store.togglePartSelector();
+    },
+    
+    handlePageChange(page) {
+      console.log('Active page changed:', page);
+      this.store.setActivePage(page.id);
+    },
+    
+    handlePagesUpdated(pages) {
+      console.log('Pages updated:', pages);
+      // Update the store with the new pages
+      this.store.pages = pages;
     },
     
     handlePartSelection(partData) {
       // Handle the selected part from the Parts Plus browser
-      console.log('Selected part:', partData);
+      console.log('App received part from PartSelector:', partData);
       
-      // Close the part selector
-      this.store.showPartSelector = false;
-      
-      // You can add additional logic here to use the selected part
-      // For example, add it to the BOM or create a shape for it
-      this.showNotification({
-        type: 'success',
-        message: 'Part selected',
-        details: `${partData.name} has been selected.`,
-        duration: 3000
-      });
+      try {
+        // Close the part selector
+        this.store.togglePartSelector();
+        
+        // Make a deep copy to avoid reference issues
+        const partCopy = JSON.parse(JSON.stringify(partData));
+        
+        // Ensure all required properties are present
+        const partProperties = {
+          name: partCopy.name || partCopy.Description || 'Unnamed Part',
+          Description: partCopy.Description || partCopy.name || 'Unnamed Part',
+          
+          partNumber: partCopy.partNumber || partCopy.PartNumber || '',
+          PartNumber: partCopy.PartNumber || partCopy.partNumber || '',
+          
+          manufacturer: partCopy.manufacturer || partCopy.Manufacturer || '',
+          Manufacturer: partCopy.Manufacturer || partCopy.manufacturer || '',
+          
+          quantity: partCopy.quantity || 1,
+          
+          description: partCopy.description || `${partCopy.Class || ''} - ${partCopy.SubClass || ''}`,
+          
+          pointType: partCopy.pointType || '',
+          
+          haystackTag: partCopy.haystackTag || partCopy.HaystackTag || `{id:${partCopy.ItemNumber || 'unknown'}, ${(partCopy.Class || 'part').toLowerCase()}:true}`,
+          HaystackTag: partCopy.HaystackTag || partCopy.haystackTag || `{id:${partCopy.ItemNumber || 'unknown'}, ${(partCopy.Class || 'part').toLowerCase()}:true}`,
+          
+          pdfPath: partCopy.pdfPath || partCopy.ProductCut || '',
+          ProductCut: partCopy.ProductCut || partCopy.pdfPath || '',
+          
+          // Include original properties
+          ItemNumber: partCopy.ItemNumber || '',
+          Class: partCopy.Class || '',
+          SubClass: partCopy.SubClass || '',
+          Supplier: partCopy.Supplier || '',
+          
+          // Preserve original part data
+          _originalPart: partCopy._originalPart || partCopy
+        };
+        
+        console.log('Normalized part properties:', partProperties);
+        
+        // Pass the part data directly to the part properties dialog
+        if (this.store.selectedShapes.length > 0) {
+          console.log('Applying part data to selected shape:', partProperties);
+          
+          // Show the part properties dialog with the selected part data
+          this.store.togglePartPropertiesDialog(partProperties);
+          
+          // Show a notification
+          this.showNotification({
+            type: 'success',
+            message: 'Part properties loaded',
+            details: `Part properties for ${partProperties.Description || partProperties.name || 'selected part'} have been loaded. Click Apply to save.`,
+            duration: 5000
+          });
+        } else {
+          // No shape selected, just show a notification
+          this.showNotification({
+            type: 'info',
+            message: 'Part selected',
+            details: `${partProperties.Description || partProperties.name || 'Part'} has been selected. Select a shape to apply this part to it.`,
+            duration: 3000
+          });
+        }
+      } catch (error) {
+        console.error('Error handling part selection:', error);
+        
+        // Try a simpler approach if the above fails
+        try {
+          if (this.store.selectedShapes.length > 0) {
+            // Create a minimal part object with required properties
+            const simplePart = {
+              name: partData.name || partData.Description || 'Unnamed Part',
+              partNumber: partData.partNumber || partData.PartNumber || '',
+              manufacturer: partData.manufacturer || partData.Manufacturer || '',
+              quantity: 1,
+              description: partData.description || `${partData.Class || ''} - ${partData.SubClass || ''}`,
+              pointType: '',
+              haystackTag: partData.haystackTag || partData.HaystackTag || '{part:true}',
+              pdfPath: partData.pdfPath || partData.ProductCut || ''
+            };
+            
+            // Just pass the simplified part data to the dialog
+            this.store.togglePartPropertiesDialog(simplePart);
+            
+            this.showNotification({
+              type: 'success',
+              message: 'Part properties loaded',
+              details: 'Part properties have been loaded. Click Apply to save.',
+              duration: 5000
+            });
+          }
+        } catch (innerError) {
+          console.error('Error in fallback handling:', innerError);
+          this.showNotification({
+            type: 'error',
+            message: 'Error selecting part',
+            details: 'There was an error processing the selected part. Please try again.',
+            duration: 3000
+          });
+        }
+      }
     },
     
     handleUngroupShapes(shapes) {
@@ -865,7 +1015,44 @@ export default {
 handleShapeAdded(newShape) {
   console.log('Shape added:', newShape);
   if (newShape) {
-    if (Array.isArray(newShape)) {
+    // Check if we received an array of shapes that includes all existing shapes
+    // This happens when the component emits the entire shapes array
+    if (Array.isArray(newShape) && newShape.length > 1 && 
+        this.store.shapes.length > 0 && newShape.length > this.store.shapes.length) {
+      // Find the new shape(s) that aren't already in the store
+      const existingIds = this.store.shapes.map(s => s.id);
+      const newShapes = newShape.filter(s => !existingIds.includes(s.id));
+      
+      console.log('Detected full shapes array, extracting new shapes:', newShapes.length);
+      
+      if (newShapes.length === 0) {
+        console.warn('No new shapes found in the array');
+        return;
+      }
+      
+      // Process only the new shapes
+      newShapes.forEach(shape => {
+        const shapeCopy = JSON.parse(JSON.stringify(shape));
+        
+        // Ensure ID is a proper string ID
+        if (!shapeCopy.id) {
+          shapeCopy.id = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        } else if (typeof shapeCopy.id === 'number') {
+          shapeCopy.id = `shape-numeric-${shapeCopy.id}`;
+        }
+        
+        if (!shapeCopy.layerId) {
+          shapeCopy.layerId = this.store.activeLayerId || 'default';
+        }
+        
+        console.log('Adding extracted shape with ID:', shapeCopy.id);
+        this.store.addShape(shapeCopy);
+      });
+      
+      // Select the new shapes
+      this.store.selectShapes(newShapes.map(s => s.id));
+    } else if (Array.isArray(newShape)) {
+      // Handle array of shapes (not the full shapes array)
       const shapeCopies = newShape.map(shape => {
         const copy = JSON.parse(JSON.stringify(shape));
         
@@ -894,6 +1081,7 @@ handleShapeAdded(newShape) {
       this.store.selectShapes(shapeCopies.map(s => s.id));
       console.log('Added shapes to store:', shapeCopies);
     } else {
+      // Handle single shape
       const shapeCopy = JSON.parse(JSON.stringify(newShape));
       
       // Ensure ID is a proper string ID
